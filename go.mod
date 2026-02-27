@@ -1,4 +1,4 @@
-module github.com/yourusername/deploy-senpai
+module github.com/hajime-ch/deploy-senpai
 
 go 1.22
 

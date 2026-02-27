@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/yourusername/deploy-senpai/internal/config"
+	"github.com/hajime-ch/deploy-senpai/internal/config"
 )
 
 // TemplateData holds the variables available in user compose templates.

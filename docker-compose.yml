@@ -2,7 +2,7 @@ services:
   deployer:
     build: .
     # Or use pre-built image:
-    # image: ghcr.io/yourusername/deploy-senpai:latest
+    # image: ghcr.io/hajime-ch/deploy-senpai:latest
     container_name: deploy-senpai
     restart: unless-stopped
     ports:

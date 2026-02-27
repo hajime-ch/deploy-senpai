@@ -71,7 +71,7 @@ func (sm *StateManager) SaveDeployment(dep *Deployment, passwords map[string]str
 		ErrorMessage:  dep.ErrorMessage,
 	}
 
-	if passwords != nil && len(passwords) > 0 && len(sm.encryptionKey) == 32 {
+	if len(passwords) > 0 && len(sm.encryptionKey) == 32 {
 		// Serialize and encrypt the passwords map
 		pwJSON, err := json.Marshal(passwords)
 		if err != nil {

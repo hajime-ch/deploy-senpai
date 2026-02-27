@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/yourusername/deploy-senpai/internal/api"
-	"github.com/yourusername/deploy-senpai/internal/cleanup"
-	"github.com/yourusername/deploy-senpai/internal/config"
-	"github.com/yourusername/deploy-senpai/internal/deployer"
+	"github.com/hajime-ch/deploy-senpai/internal/api"
+	"github.com/hajime-ch/deploy-senpai/internal/cleanup"
+	"github.com/hajime-ch/deploy-senpai/internal/config"
+	"github.com/hajime-ch/deploy-senpai/internal/deployer"
 )
 
 func newServeCmd() *cobra.Command {

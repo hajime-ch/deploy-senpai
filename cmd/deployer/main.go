@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/yourusername/deploy-senpai/internal/cli"
+	"github.com/hajime-ch/deploy-senpai/internal/cli"
 )
 
 var version = "dev"

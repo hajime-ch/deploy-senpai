@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourusername/deploy-senpai/internal/config"
+	"github.com/hajime-ch/deploy-senpai/internal/config"
 )
 
 // DeploymentStatus represents the current state of a deployment
@@ -87,9 +87,11 @@ func New(cfg *config.Config, logger *slog.Logger) *Deployer {
 
 // generateDeploymentID creates a unique deployment ID
 func generateDeploymentID() string {
-	bytes := make([]byte, 8)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
+	return hex.EncodeToString(b)
 }
 
 // StartDeployment creates a pending deployment record and returns its ID

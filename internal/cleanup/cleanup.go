@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
-	"github.com/yourusername/deploy-senpai/internal/config"
-	"github.com/yourusername/deploy-senpai/internal/deployer"
+	"github.com/hajime-ch/deploy-senpai/internal/config"
+	"github.com/hajime-ch/deploy-senpai/internal/deployer"
 )
 
 // Cleaner handles automatic cleanup of stale deployments

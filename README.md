@@ -32,7 +32,7 @@ A lightweight service that automatically deploys feature branches to isolated st
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/deploy-senpai.git
+git clone https://github.com/hajime-ch/deploy-senpai.git
 cd deploy-senpai
 make build
 ```

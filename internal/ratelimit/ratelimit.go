@@ -70,7 +70,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			w.Header().Set("X-RateLimit-Remaining", "0")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"error":"rate limit exceeded","retry_after":"` + strconv.Itoa(int(retryAfter.Seconds())) + `s"}`))
+			_, _ = w.Write([]byte(`{"error":"rate limit exceeded","retry_after":"` + strconv.Itoa(int(retryAfter.Seconds())) + `s"}`))
 			return
 		}
 

@@ -12,13 +12,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/yourusername/deploy-senpai/internal/auth"
-	"github.com/yourusername/deploy-senpai/internal/cleanup"
-	"github.com/yourusername/deploy-senpai/internal/config"
-	"github.com/yourusername/deploy-senpai/internal/deployer"
-	"github.com/yourusername/deploy-senpai/internal/github"
-	"github.com/yourusername/deploy-senpai/internal/metrics"
-	"github.com/yourusername/deploy-senpai/internal/ratelimit"
+	"github.com/hajime-ch/deploy-senpai/internal/auth"
+	"github.com/hajime-ch/deploy-senpai/internal/cleanup"
+	"github.com/hajime-ch/deploy-senpai/internal/config"
+	"github.com/hajime-ch/deploy-senpai/internal/deployer"
+	"github.com/hajime-ch/deploy-senpai/internal/github"
+	"github.com/hajime-ch/deploy-senpai/internal/metrics"
+	"github.com/hajime-ch/deploy-senpai/internal/ratelimit"
 )
 
 // Helper functions for health checks
@@ -170,7 +170,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK) // Still return 200 for degraded
 	}
 
-	json.NewEncoder(w).Encode(health)
+	_ = json.NewEncoder(w).Encode(health)
 }
 
 type healthCheck struct {
@@ -241,7 +241,7 @@ func (s *Server) checkStorage() map[string]interface{} {
 			"error":  "storage not writable",
 		}
 	}
-	removeFile(testFile)
+	_ = removeFile(testFile)
 
 	return map[string]interface{}{
 		"status": "ok",
@@ -269,7 +269,7 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	switch payload.Event {
 	case github.EventPing:
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"message": "pong"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "pong"})
 		return
 
 	case github.EventPush:
@@ -281,12 +281,12 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 					go func() {
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 						defer cancel()
-						s.cleaner.CleanupBranch(ctx, appName, payload.Branch)
+						_ = s.cleaner.CleanupBranch(ctx, appName, payload.Branch)
 					}()
 				}
 			}
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"message": "branch deletion noted"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"message": "branch deletion noted"})
 			return
 		}
 
@@ -295,7 +295,7 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		if !found {
 			s.logger.Warn("unknown repository", "repo", payload.Repository)
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"message": "repository not configured"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"message": "repository not configured"})
 			return
 		}
 
@@ -344,7 +344,7 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		}()
 
 		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"message":       "deployment triggered",
 			"deployment_id": dep.ID,
 			"app":           appName,
@@ -358,23 +358,23 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 				go func() {
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 					defer cancel()
-					s.cleaner.CleanupBranch(ctx, appName, payload.Branch)
+					_ = s.cleaner.CleanupBranch(ctx, appName, payload.Branch)
 				}()
 			}
 		}
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"message": "delete event processed"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "delete event processed"})
 
 	default:
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"message": "event ignored"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "event ignored"})
 	}
 }
 
 func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
 	deployments := s.deployer.List()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(deployments)
+	_ = json.NewEncoder(w).Encode(deployments)
 }
 
 func (s *Server) handleGetDeployment(w http.ResponseWriter, r *http.Request) {
@@ -388,7 +388,7 @@ func (s *Server) handleGetDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(dep)
+	_ = json.NewEncoder(w).Encode(dep)
 }
 
 func (s *Server) handleGetDeploymentStatus(w http.ResponseWriter, r *http.Request) {
@@ -401,7 +401,7 @@ func (s *Server) handleGetDeploymentStatus(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"id":            dep.ID,
 		"app":           dep.App,
 		"branch":        dep.Branch,
@@ -428,7 +428,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ImageTag string `json:"image_tag"`
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	imageTag := body.ImageTag
 	if imageTag == "" {
@@ -448,7 +448,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(dep)
+	_ = json.NewEncoder(w).Encode(dep)
 }
 
 func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
@@ -475,7 +475,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{"message": "cleanup triggered"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "cleanup triggered"})
 }
 
 func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
@@ -495,5 +495,5 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(apps)
+	_ = json.NewEncoder(w).Encode(apps)
 }

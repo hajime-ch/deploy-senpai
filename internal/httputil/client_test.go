@@ -170,12 +170,12 @@ func TestSecureClientGet(t *testing.T) {
 		switch r.URL.Path {
 		case "/ok":
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("test content"))
+			_, _ = w.Write([]byte("test content"))
 		case "/large":
 			w.WriteHeader(http.StatusOK)
 			// Write more than 1KB
 			for i := 0; i < 2000; i++ {
-				w.Write([]byte("x"))
+				_, _ = w.Write([]byte("x"))
 			}
 		case "/error":
 			w.WriteHeader(http.StatusInternalServerError)
