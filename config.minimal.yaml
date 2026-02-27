@@ -1,0 +1,45 @@
+# Minimal configuration - get started quickly
+# Copy to config.yaml and fill in the required values
+
+server:
+  port: 8080
+  webhook_secret: "${WEBHOOK_SECRET}"  # Generate with: openssl rand -hex 32
+
+domain:
+  base_domain: "staging.example.com"   # Your staging domain
+
+github:
+  token: "${GITHUB_TOKEN}"             # PAT with read:packages scope
+  owner: "your-github-org"             # GitHub org or username
+
+docker:
+  network: "web"
+  registry: "ghcr.io"
+
+# Add your applications — each with its own compose template
+apps:
+  # Example: Node.js API with Postgres
+  api:
+    repo: "my-api"                     # GitHub repo name
+    compose_template: "./templates/app-with-db.yml.tpl"
+    env:
+      NODE_ENV: "staging"
+      LOG_LEVEL: "debug"
+
+  # Example: Frontend app (no database)
+  frontend:
+    repo: "my-frontend"
+    compose_template: "./templates/static-site.yml.tpl"
+    env:
+      API_URL: "https://api-${BRANCH}.staging.example.com"
+
+  # Example: Production deployment (fixed slot, deploy via API or tag push)
+  api-prod:
+    repo: "my-api"
+    compose_template: "./templates/production.yml.tpl"
+    deploy_ref: "production"
+    env:
+      NODE_ENV: "production"
+
+cleanup:
+  on_branch_delete: true

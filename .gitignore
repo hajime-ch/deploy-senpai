@@ -1,0 +1,32 @@
+# Build artifacts
+build/
+dist/
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project-specific
+config.yaml
+*.log

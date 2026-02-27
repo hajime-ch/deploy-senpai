@@ -1,0 +1,122 @@
+# Deploy Senpai Configuration
+# Copy this to config.yaml and adjust to your needs
+#
+# SECURITY NOTE: Use environment variables for sensitive values.
+# The syntax ${VAR_NAME} will be expanded at runtime.
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  # Secret for validating GitHub webhooks (set in GitHub webhook settings)
+  # REQUIRED: Use environment variable for security
+  webhook_secret: "${WEBHOOK_SECRET}"
+  # Enable API authentication (recommended for production)
+  enable_auth: true
+  # API keys for authenticating requests to /api/v1/* endpoints
+  # REQUIRED when enable_auth is true: Use environment variables
+  api_keys:
+    - "${API_KEY_1}"
+    # - "${API_KEY_2}"
+
+domain:
+  # Base domain for staging deployments
+  # Feature branches will be accessible at: {app}-{branch}.{base_domain}
+  base_domain: "staging.example.com"
+
+github:
+  # Personal access token with read:packages scope for pulling from ghcr.io
+  # REQUIRED: Use environment variable for security
+  token: "${GITHUB_TOKEN}"
+  # GitHub username or organization
+  owner: "your-org"
+
+docker:
+  # Docker network for container communication
+  network: "web"
+  # Registry prefix
+  registry: "ghcr.io"
+
+# Security settings
+security:
+  # Allowed hosts for downloading init files (SSRF protection)
+  allowed_init_hosts:
+    - "raw.githubusercontent.com"
+  # Block requests to private IP ranges (10.x, 172.16-31.x, 192.168.x, localhost)
+  block_private_ips: true
+
+# Rate limiting
+rate_limit:
+  enabled: true
+  requests_per_minute: 60
+
+# Default settings for all apps
+defaults:
+  # How long before inactive deployments are cleaned up (hours)
+  cleanup_after_hours: 168  # 7 days
+
+# Application configurations
+# Each app provides its own docker-compose template with full control over
+# services, resources, volumes, health checks, and routing.
+apps:
+  # Example: App with PostgreSQL database
+  my-app:
+    repo: "my-app"
+    image: "my-app"
+    # Path to the docker-compose template (required)
+    # Available template variables: {{.AppName}}, {{.Branch}}, {{.SanitizedBranch}},
+    #   {{.ImageTag}}, {{.Image}}, {{.Registry}}, {{.Owner}}, {{.BaseDomain}},
+    #   {{.Subdomain}}, {{.Network}}, {{.Env}}
+    # Template function: {{password "name"}} — generates a random password,
+    #   reuses the same value on re-deploys
+    compose_template: "/etc/deployer/templates/app-with-db.yml.tpl"
+    # Optional: directory of files to copy into the deployment directory
+    # (e.g., init.sql, seed data, config files)
+    init_files: "/etc/deployer/init-files/my-app/"
+    env:
+      NODE_ENV: "staging"
+      LOG_LEVEL: "debug"
+
+    # Optional: lifecycle scripts run before/after deploy and remove
+    # Scripts receive DEPLOY_APP, DEPLOY_BRANCH, DEPLOY_SANITIZED_BRANCH,
+    # DEPLOY_URL, DEPLOY_IMAGE_TAG, DEPLOY_ID, DEPLOY_STATUS as env vars.
+    # Failing pre scripts abort the operation; failing post scripts only log a warning.
+    # Each script has a 60-second timeout.
+    scripts:
+      pre_deploy: "/etc/deployer/scripts/my-app/pre-deploy.sh"
+      post_deploy: "/etc/deployer/scripts/my-app/post-deploy.sh"
+      # pre_remove: "/etc/deployer/scripts/my-app/pre-remove.sh"
+      # post_remove: "/etc/deployer/scripts/my-app/post-remove.sh"
+
+  # Example: Simple static site (no database)
+  docs-site:
+    repo: "documentation"
+    image: "docs"
+    compose_template: "/etc/deployer/templates/static-site.yml.tpl"
+
+  # Example: Production deployment via tagged releases
+  # All tag pushes (e.g. v1.2.3) deploy to a fixed "production" slot.
+  # Trigger from CI: curl -X POST .../api/v1/deployments/my-app-prod/production \
+  #   -H "X-API-Key: $KEY" -d '{"image_tag": "v1.2.3"}'
+  my-app-prod:
+    repo: "my-app"
+    image: "my-app"
+    compose_template: "/etc/deployer/templates/production.yml.tpl"
+    deploy_ref: "production"
+    env:
+      NODE_ENV: "production"
+
+# Cleanup settings
+cleanup:
+  # How often to run cleanup (cron expression)
+  schedule: "0 * * * *"  # Every hour
+  # Also clean up when branch is deleted (requires webhook)
+  on_branch_delete: true
+  # Keep at least this many recent deployments per app
+  keep_recent: 3
+
+# Logging
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json"  # json or text
+  # Optional: send logs to file
+  # file: "/var/log/deployer/deployer.log"

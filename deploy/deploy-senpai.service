@@ -1,0 +1,61 @@
+[Unit]
+Description=Deploy Senpai Service
+Documentation=https://github.com/hajime-ch/deploy-senpai
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=deployer
+Group=docker
+
+# Environment
+Environment=HOME=/var/lib/deployer
+WorkingDirectory=/var/lib/deployer
+
+# Binary location
+ExecStart=/usr/local/bin/deploy-senpai -config /etc/deployer/config.yaml
+
+# Restart policy
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/deployer
+PrivateTmp=true
+
+# Additional security restrictions
+PrivateDevices=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+RestrictRealtime=true
+
+# System call filtering
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+# Capabilities
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deploy-senpai
+
+[Install]
+WantedBy=multi-user.target
