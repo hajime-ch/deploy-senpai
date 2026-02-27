@@ -14,9 +14,9 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -39,9 +39,9 @@ jobs:
           - goos: darwin
             goarch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -55,7 +55,7 @@ jobs:
           tar czf deploy-senpai-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz deploy-senpai
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deploy-senpai-${{ matrix.goos }}-${{ matrix.goarch }}
           path: deploy-senpai-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
@@ -65,7 +65,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Docker meta
         id: meta
@@ -103,12 +103,13 @@ jobs:
     needs: [build-binaries, docker]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
+          pattern: deploy-senpai-*
           merge-multiple: true
 
       - name: Create release
