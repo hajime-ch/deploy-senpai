@@ -107,7 +107,7 @@ func TestGeneratePassword(t *testing.T) {
 
 	// Test that password contains only hex characters
 	for _, c := range password1 {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Errorf("GeneratePassword() contains non-hex character: %c", c)
 		}
 	}
@@ -189,8 +189,7 @@ apps:
 	}
 
 	// Set environment variable
-	os.Setenv("GITHUB_TOKEN", "test-token")
-	defer os.Unsetenv("GITHUB_TOKEN")
+	t.Setenv("GITHUB_TOKEN", "test-token")
 
 	cfg, err := Load(configPath)
 	if err != nil {

@@ -39,27 +39,27 @@ func NewTable() *Table {
 func (t *Table) Header(cols ...string) {
 	for i, col := range cols {
 		if i > 0 {
-			fmt.Fprint(t.w, "\t")
+			_, _ = fmt.Fprint(t.w, "\t")
 		}
-		fmt.Fprint(t.w, col)
+		_, _ = fmt.Fprint(t.w, col)
 	}
-	fmt.Fprintln(t.w)
+	_, _ = fmt.Fprintln(t.w)
 }
 
 // Row writes a data row.
 func (t *Table) Row(cols ...string) {
 	for i, col := range cols {
 		if i > 0 {
-			fmt.Fprint(t.w, "\t")
+			_, _ = fmt.Fprint(t.w, "\t")
 		}
-		fmt.Fprint(t.w, col)
+		_, _ = fmt.Fprint(t.w, col)
 	}
-	fmt.Fprintln(t.w)
+	_, _ = fmt.Fprintln(t.w)
 }
 
 // Flush flushes the underlying tabwriter.
 func (t *Table) Flush() {
-	t.w.Flush()
+	_ = t.w.Flush()
 }
 
 // FormatTime returns a human-readable relative time string.

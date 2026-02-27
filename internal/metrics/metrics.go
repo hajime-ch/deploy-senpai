@@ -85,37 +85,37 @@ func (m *Metrics) Handler() http.HandlerFunc {
 		// Output Prometheus format metrics
 
 		// Counters
-		fmt.Fprintf(w, "# HELP deployer_deployments_total Total number of deployment attempts\n")
-		fmt.Fprintf(w, "# TYPE deployer_deployments_total counter\n")
-		fmt.Fprintf(w, "deployer_deployments_total %d\n\n", atomic.LoadInt64(&m.deploymentsTotal))
+		_, _ = fmt.Fprintf(w, "# HELP deployer_deployments_total Total number of deployment attempts\n")
+		_, _ = fmt.Fprintf(w, "# TYPE deployer_deployments_total counter\n")
+		_, _ = fmt.Fprintf(w, "deployer_deployments_total %d\n\n", atomic.LoadInt64(&m.deploymentsTotal))
 
-		fmt.Fprintf(w, "# HELP deployer_deployments_succeeded_total Total number of successful deployments\n")
-		fmt.Fprintf(w, "# TYPE deployer_deployments_succeeded_total counter\n")
-		fmt.Fprintf(w, "deployer_deployments_succeeded_total %d\n\n", atomic.LoadInt64(&m.deploymentsSucceeded))
+		_, _ = fmt.Fprintf(w, "# HELP deployer_deployments_succeeded_total Total number of successful deployments\n")
+		_, _ = fmt.Fprintf(w, "# TYPE deployer_deployments_succeeded_total counter\n")
+		_, _ = fmt.Fprintf(w, "deployer_deployments_succeeded_total %d\n\n", atomic.LoadInt64(&m.deploymentsSucceeded))
 
-		fmt.Fprintf(w, "# HELP deployer_deployments_failed_total Total number of failed deployments\n")
-		fmt.Fprintf(w, "# TYPE deployer_deployments_failed_total counter\n")
-		fmt.Fprintf(w, "deployer_deployments_failed_total %d\n\n", atomic.LoadInt64(&m.deploymentsFailed))
+		_, _ = fmt.Fprintf(w, "# HELP deployer_deployments_failed_total Total number of failed deployments\n")
+		_, _ = fmt.Fprintf(w, "# TYPE deployer_deployments_failed_total counter\n")
+		_, _ = fmt.Fprintf(w, "deployer_deployments_failed_total %d\n\n", atomic.LoadInt64(&m.deploymentsFailed))
 
-		fmt.Fprintf(w, "# HELP deployer_http_requests_total Total number of HTTP requests\n")
-		fmt.Fprintf(w, "# TYPE deployer_http_requests_total counter\n")
-		fmt.Fprintf(w, "deployer_http_requests_total %d\n\n", atomic.LoadInt64(&m.requestsTotal))
+		_, _ = fmt.Fprintf(w, "# HELP deployer_http_requests_total Total number of HTTP requests\n")
+		_, _ = fmt.Fprintf(w, "# TYPE deployer_http_requests_total counter\n")
+		_, _ = fmt.Fprintf(w, "deployer_http_requests_total %d\n\n", atomic.LoadInt64(&m.requestsTotal))
 
-		fmt.Fprintf(w, "# HELP deployer_webhooks_received_total Total number of webhooks received\n")
-		fmt.Fprintf(w, "# TYPE deployer_webhooks_received_total counter\n")
-		fmt.Fprintf(w, "deployer_webhooks_received_total %d\n\n", atomic.LoadInt64(&m.webhooksReceived))
+		_, _ = fmt.Fprintf(w, "# HELP deployer_webhooks_received_total Total number of webhooks received\n")
+		_, _ = fmt.Fprintf(w, "# TYPE deployer_webhooks_received_total counter\n")
+		_, _ = fmt.Fprintf(w, "deployer_webhooks_received_total %d\n\n", atomic.LoadInt64(&m.webhooksReceived))
 
 		// Gauges
-		fmt.Fprintf(w, "# HELP deployer_active_deployments Current number of active deployments\n")
-		fmt.Fprintf(w, "# TYPE deployer_active_deployments gauge\n")
-		fmt.Fprintf(w, "deployer_active_deployments %d\n\n", atomic.LoadInt64(&m.activeDeployments))
+		_, _ = fmt.Fprintf(w, "# HELP deployer_active_deployments Current number of active deployments\n")
+		_, _ = fmt.Fprintf(w, "# TYPE deployer_active_deployments gauge\n")
+		_, _ = fmt.Fprintf(w, "deployer_active_deployments %d\n\n", atomic.LoadInt64(&m.activeDeployments))
 
 		// Request counts per path
-		fmt.Fprintf(w, "# HELP deployer_http_requests_by_path Total requests by path\n")
-		fmt.Fprintf(w, "# TYPE deployer_http_requests_by_path counter\n")
+		_, _ = fmt.Fprintf(w, "# HELP deployer_http_requests_by_path Total requests by path\n")
+		_, _ = fmt.Fprintf(w, "# TYPE deployer_http_requests_by_path counter\n")
 		m.mu.RLock()
 		for path, count := range m.requestDurations {
-			fmt.Fprintf(w, "deployer_http_requests_by_path{path=\"%s\"} %d\n", path, atomic.LoadInt64(count))
+			_, _ = fmt.Fprintf(w, "deployer_http_requests_by_path{path=\"%s\"} %d\n", path, atomic.LoadInt64(count))
 		}
 		m.mu.RUnlock()
 	}

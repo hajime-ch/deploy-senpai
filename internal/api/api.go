@@ -164,9 +164,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	if health.Status == "unhealthy" {
+	switch health.Status {
+	case "unhealthy":
 		w.WriteHeader(http.StatusServiceUnavailable)
-	} else if health.Status == "degraded" {
+	case "degraded":
 		w.WriteHeader(http.StatusOK) // Still return 200 for degraded
 	}
 

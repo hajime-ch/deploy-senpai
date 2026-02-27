@@ -421,13 +421,13 @@ func copyInitFiles(srcDir, deployDir string) error {
 
 		dst, err := os.Create(dstPath)
 		if err != nil {
-			src.Close()
+			_ = src.Close()
 			return fmt.Errorf("creating %s: %w", dstPath, err)
 		}
 
 		_, err = io.Copy(dst, src)
-		src.Close()
-		dst.Close()
+		_ = src.Close()
+		_ = dst.Close()
 		if err != nil {
 			return fmt.Errorf("copying %s: %w", entry.Name(), err)
 		}

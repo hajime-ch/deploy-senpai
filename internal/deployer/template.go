@@ -70,7 +70,7 @@ func (tr *TemplateRenderer) RenderTemplate(templatePath string, data TemplateDat
 	if err != nil {
 		return nil, fmt.Errorf("creating output file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if err := tmpl.Execute(f, data); err != nil {
 		return nil, fmt.Errorf("executing template: %w", err)
