@@ -61,6 +61,7 @@ type AppConfig struct {
 	ComposeTemplate string            `yaml:"compose_template"`
 	InitFiles       string            `yaml:"init_files"`
 	DeployRef       string            `yaml:"deploy_ref"`
+	BaseDomain      string            `yaml:"base_domain"`
 	Env             map[string]string `yaml:"env"`
 	Scripts         ScriptsConfig     `yaml:"scripts"`
 }
@@ -176,9 +177,25 @@ func (c *Config) applyDefaults() {
 	}
 }
 
+// BaseDomainForApp returns the per-app base domain if set, otherwise the global one.
+func (c *Config) BaseDomainForApp(appName string) string {
+	if app, ok := c.Apps[appName]; ok && app.BaseDomain != "" {
+		return app.BaseDomain
+	}
+	return c.Domain.BaseDomain
+}
+
 func (c *Config) validate() error {
-	if c.Domain.BaseDomain == "" {
-		return fmt.Errorf("domain.base_domain is required")
+	// Global base_domain is only required when at least one app lacks its own.
+	needsGlobal := false
+	for _, app := range c.Apps {
+		if app.BaseDomain == "" {
+			needsGlobal = true
+			break
+		}
+	}
+	if needsGlobal && c.Domain.BaseDomain == "" {
+		return fmt.Errorf("domain.base_domain is required (or set base_domain on every app)")
 	}
 	if c.GitHub.Token == "" {
 		return fmt.Errorf("github.token is required")

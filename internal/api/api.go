@@ -484,6 +484,7 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		Name            string `json:"name"`
 		Repo            string `json:"repo"`
 		ComposeTemplate string `json:"compose_template"`
+		BaseDomain      string `json:"base_domain"`
 	}
 
 	apps := make([]appInfo, 0, len(s.cfg.Apps))
@@ -492,6 +493,7 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 			Name:            name,
 			Repo:            app.Repo,
 			ComposeTemplate: app.ComposeTemplate,
+			BaseDomain:      s.cfg.BaseDomainForApp(name),
 		})
 	}
 

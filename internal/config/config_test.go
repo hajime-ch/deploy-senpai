@@ -232,10 +232,29 @@ func TestConfigValidation(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "missing base domain",
+			name: "missing base domain with app that lacks its own",
 			config: Config{
 				GitHub: GitHubConfig{Token: "${TOKEN}", Owner: "org"},
 				Apps:   map[string]AppConfig{"app": {Repo: "repo", ComposeTemplate: tplPath}},
+			},
+			expectError: true,
+		},
+		{
+			name: "no global base domain but all apps have their own",
+			config: Config{
+				GitHub: GitHubConfig{Token: "${TOKEN}", Owner: "org"},
+				Apps:   map[string]AppConfig{"app": {Repo: "repo", ComposeTemplate: tplPath, BaseDomain: "app.example.com"}},
+			},
+			expectError: false,
+		},
+		{
+			name: "no global base domain with mixed apps",
+			config: Config{
+				GitHub: GitHubConfig{Token: "${TOKEN}", Owner: "org"},
+				Apps: map[string]AppConfig{
+					"a": {Repo: "r1", ComposeTemplate: tplPath, BaseDomain: "a.example.com"},
+					"b": {Repo: "r2", ComposeTemplate: tplPath},
+				},
 			},
 			expectError: true,
 		},
@@ -390,6 +409,35 @@ apps:
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("Load() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestBaseDomainForApp(t *testing.T) {
+	cfg := &Config{
+		Domain: DomainConfig{BaseDomain: "global.example.com"},
+		Apps: map[string]AppConfig{
+			"with-override": {Repo: "r1", BaseDomain: "custom.example.com"},
+			"without":       {Repo: "r2"},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		app      string
+		expected string
+	}{
+		{"per-app override", "with-override", "custom.example.com"},
+		{"fallback to global", "without", "global.example.com"},
+		{"unknown app falls back to global", "nonexistent", "global.example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cfg.BaseDomainForApp(tt.app)
+			if got != tt.expected {
+				t.Errorf("BaseDomainForApp(%q) = %q, want %q", tt.app, got, tt.expected)
 			}
 		})
 	}

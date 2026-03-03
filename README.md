@@ -108,7 +108,7 @@ cleanup:
 | `server.webhook_secret` | string | *required* | GitHub webhook HMAC secret |
 | `server.enable_auth` | bool | `false` | Require API key for `/api/v1/*` endpoints |
 | `server.api_keys` | list | — | Accepted API keys (when auth enabled) |
-| `domain.base_domain` | string | *required* | Base domain for deployment URLs |
+| `domain.base_domain` | string | *required** | Base domain for deployment URLs |
 | `github.token` | string | *required* | GitHub PAT (needs `read:packages`) |
 | `github.owner` | string | *required* | GitHub org or username |
 | `docker.network` | string | `web` | Docker network for containers |
@@ -123,6 +123,8 @@ cleanup:
 | `rate_limit.enabled` | bool | `false` | Enable rate limiting |
 | `rate_limit.requests_per_minute` | int | `60` | Rate limit threshold |
 
+\* `domain.base_domain` is only required when at least one app does not set its own `base_domain`. If every app defines a per-app `base_domain`, the global setting can be omitted.
+
 ### App Config
 
 Each entry under `apps:` defines a deployable application:
@@ -135,6 +137,7 @@ apps:
     compose_template: "./templates/app-with-db.yml.tpl"  # Path to template (required)
     init_files: "./init-files/my-app/"                # Directory of files to copy into deploy dir (optional)
     deploy_ref: ""                                    # Fixed deployment slot name (optional, see Production Deployments)
+    base_domain: ""                                   # Override global domain.base_domain for this app (optional)
     env:                                              # Environment variables passed to template (optional)
       NODE_ENV: "staging"
       LOG_LEVEL: "debug"

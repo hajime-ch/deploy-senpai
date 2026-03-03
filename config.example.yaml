@@ -92,11 +92,13 @@ apps:
       # pre_remove: "/etc/deployer/scripts/my-app/pre-remove.sh"
       # post_remove: "/etc/deployer/scripts/my-app/post-remove.sh"
 
-  # Example: Simple static site (no database)
+  # Example: Simple static site on a different domain
+  # Per-app base_domain overrides the global domain.base_domain
   docs-site:
     repo: "documentation"
     image: "docs"
     compose_template: "/etc/deployer/templates/static-site.yml.tpl"
+    base_domain: "docs.example.com"
 
   # Example: Production deployment via tagged releases
   # All tag pushes (e.g. v1.2.3) deploy to a fixed "production" slot.
