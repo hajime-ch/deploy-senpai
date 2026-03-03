@@ -36,6 +36,11 @@ docker:
   # Registry prefix
   registry: "ghcr.io"
 
+# Storage settings
+storage:
+  # Directory for deployment state (compose files, metadata, passwords)
+  data_dir: "/var/lib/deployer"
+
 # Security settings
 security:
   # Allowed hosts for downloading init files (SSRF protection)

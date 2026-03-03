@@ -56,7 +56,7 @@ type Deployer struct {
 
 // New creates a new Deployer
 func New(cfg *config.Config, logger *slog.Logger) *Deployer {
-	dataDir := "/var/lib/deployer"
+	dataDir := cfg.Storage.DataDir
 
 	// Get encryption key from environment (32 bytes for AES-256)
 	var encryptionKey []byte

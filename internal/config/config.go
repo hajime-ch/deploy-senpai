@@ -16,13 +16,17 @@ type Config struct {
 	Domain        DomainConfig        `yaml:"domain"`
 	GitHub        GitHubConfig        `yaml:"github"`
 	Docker        DockerConfig        `yaml:"docker"`
+	Storage       StorageConfig       `yaml:"storage"`
 	Defaults      DefaultsConfig      `yaml:"defaults"`
 	Apps          map[string]AppConfig `yaml:"apps"`
 	Cleanup       CleanupConfig       `yaml:"cleanup"`
 	Logging       LoggingConfig       `yaml:"logging"`
-
 	Security      SecurityConfig      `yaml:"security"`
 	RateLimit     RateLimitConfig     `yaml:"rate_limit"`
+}
+
+type StorageConfig struct {
+	DataDir string `yaml:"data_dir"`
 }
 
 type ServerConfig struct {
@@ -97,6 +101,11 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config file: %w", err)
 	}
 
+	// Check for plaintext tokens in raw YAML before env var expansion
+	if err := checkRawTokens(data); err != nil {
+		return nil, fmt.Errorf("validating config: %w", err)
+	}
+
 	// Expand environment variables
 	expanded := os.ExpandEnv(string(data))
 
@@ -128,6 +137,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Docker.Registry == "" {
 		c.Docker.Registry = "ghcr.io"
+	}
+	if c.Storage.DataDir == "" {
+		c.Storage.DataDir = "/var/lib/deployer"
 	}
 	if c.Defaults.CleanupAfterHours == 0 {
 		c.Defaults.CleanupAfterHours = 168
@@ -216,11 +228,22 @@ func (c *Config) validate() error {
 		}
 	}
 
-	// Warn about plaintext secrets (tokens starting with known prefixes)
-	if isPlaintextToken(c.GitHub.Token) {
+	return nil
+}
+
+// checkRawTokens parses the raw YAML (before env expansion) to detect plaintext tokens.
+func checkRawTokens(data []byte) error {
+	var raw struct {
+		GitHub struct {
+			Token string `yaml:"token"`
+		} `yaml:"github"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil // let the main parse report the error
+	}
+	if isPlaintextToken(raw.GitHub.Token) {
 		return fmt.Errorf("github.token appears to be a plaintext token; use environment variable syntax ${GITHUB_TOKEN} for security")
 	}
-
 	return nil
 }
 
@@ -301,5 +324,5 @@ func SanitizeBranchName(branch string) string {
 
 // DeploymentDir returns the directory for a specific deployment
 func (c *Config) DeploymentDir(app, branch string) string {
-	return filepath.Join("/var/lib/deployer/deployments", app, SanitizeBranchName(branch))
+	return filepath.Join(c.Storage.DataDir, "deployments", app, SanitizeBranchName(branch))
 }

@@ -232,7 +232,7 @@ func (s *Server) checkDocker(ctx context.Context) map[string]interface{} {
 }
 
 func (s *Server) checkStorage() map[string]interface{} {
-	dataDir := "/var/lib/deployer"
+	dataDir := s.cfg.Storage.DataDir
 
 	// Check if data directory is accessible and writable
 	testFile := dataDir + "/.health_check"

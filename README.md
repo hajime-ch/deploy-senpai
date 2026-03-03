@@ -113,6 +113,7 @@ cleanup:
 | `github.owner` | string | *required* | GitHub org or username |
 | `docker.network` | string | `web` | Docker network for containers |
 | `docker.registry` | string | `ghcr.io` | Container registry |
+| `storage.data_dir` | string | `/var/lib/deployer` | Directory for deployment state |
 | `defaults.cleanup_after_hours` | int | `168` (7 days) | Inactivity threshold for cleanup |
 | `cleanup.schedule` | cron | `0 * * * *` | Cleanup check interval |
 | `cleanup.on_branch_delete` | bool | `false` | Remove deployment when branch is deleted |

@@ -248,15 +248,8 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectError: true,
 		},
-		{
-			name: "plaintext token",
-			config: Config{
-				Domain: DomainConfig{BaseDomain: "example.com"},
-				GitHub: GitHubConfig{Token: "ghp_xxxx", Owner: "org"},
-				Apps:   map[string]AppConfig{"app": {Repo: "repo", ComposeTemplate: tplPath}},
-			},
-			expectError: true,
-		},
+		// plaintext token detection is tested in TestLoadPlaintextToken
+		// since it now runs on raw YAML before env expansion
 		{
 			name: "no apps",
 			config: Config{
@@ -349,6 +342,54 @@ func TestConfigValidation(t *testing.T) {
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("validate() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadPlaintextToken(t *testing.T) {
+	tmpDir := t.TempDir()
+	tplPath := filepath.Join(tmpDir, "compose.yml.tpl")
+	if err := os.WriteFile(tplPath, []byte("services:\n  app:\n    image: test\n"), 0644); err != nil {
+		t.Fatalf("Failed to write template file: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		token       string
+		expectError bool
+	}{
+		{"plaintext ghp_ token", "ghp_xxxxxxxxxxxx", true},
+		{"plaintext github_pat_ token", "github_pat_xxxxxxxxxxxx", true},
+		{"env var reference", "${GITHUB_TOKEN}", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configContent := `
+domain:
+  base_domain: "example.com"
+github:
+  token: "` + tt.token + `"
+  owner: "org"
+apps:
+  app:
+    repo: "repo"
+    compose_template: "` + tplPath + `"
+`
+			configPath := filepath.Join(tmpDir, "config-"+tt.name+".yaml")
+			if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+				t.Fatalf("Failed to write config file: %v", err)
+			}
+
+			t.Setenv("GITHUB_TOKEN", "test-token-value")
+
+			_, err := Load(configPath)
+			if tt.expectError && err == nil {
+				t.Error("Load() expected error but got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Load() unexpected error: %v", err)
 			}
 		})
 	}
