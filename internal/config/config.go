@@ -33,7 +33,7 @@ type ServerConfig struct {
 	Host          string   `yaml:"host"`
 	Port          int      `yaml:"port"`
 	WebhookSecret string   `yaml:"webhook_secret"`
-	EnableAuth    bool     `yaml:"enable_auth"`
+	EnableAuth    *bool    `yaml:"enable_auth"`
 	APIKeys       []string `yaml:"api_keys"`
 }
 
@@ -158,6 +158,12 @@ func (c *Config) applyDefaults() {
 		c.Logging.Format = "json"
 	}
 
+	// Auth default: enabled unless explicitly disabled
+	if c.Server.EnableAuth == nil {
+		t := true
+		c.Server.EnableAuth = &t
+	}
+
 	// Security defaults
 	if len(c.Security.AllowedInitHosts) == 0 {
 		c.Security.AllowedInitHosts = []string{"raw.githubusercontent.com"}
@@ -231,7 +237,7 @@ func (c *Config) validate() error {
 	}
 
 	// Security validations
-	if c.Server.EnableAuth {
+	if c.Server.EnableAuth != nil && *c.Server.EnableAuth {
 		// Check that API keys are configured when auth is enabled
 		hasValidKey := false
 		for _, key := range c.Server.APIKeys {

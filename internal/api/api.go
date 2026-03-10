@@ -46,7 +46,7 @@ func New(cfg *config.Config, d *deployer.Deployer, c *cleanup.Cleaner, logger *s
 		cleaner:  c,
 		logger:   logger,
 		router:   chi.NewRouter(),
-		auth:     auth.New(cfg.Server.APIKeys, cfg.Server.EnableAuth),
+		auth:     auth.New(cfg.Server.APIKeys, *cfg.Server.EnableAuth),
 		rateLimiter: ratelimit.New(ratelimit.Config{
 			Enabled:           cfg.RateLimit.Enabled,
 			RequestsPerMinute: cfg.RateLimit.RequestsPerMinute,

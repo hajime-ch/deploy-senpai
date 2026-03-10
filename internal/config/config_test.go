@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+func boolPtr(b bool) *bool { return &b }
+
 func TestSanitizeBranchName(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -173,6 +175,8 @@ func TestConfigLoad(t *testing.T) {
 	}
 
 	configContent := `
+server:
+  enable_auth: false
 domain:
   base_domain: "staging.example.com"
 github:
@@ -310,7 +314,7 @@ func TestConfigValidation(t *testing.T) {
 			config: Config{
 				Domain: DomainConfig{BaseDomain: "example.com"},
 				GitHub: GitHubConfig{Token: "${TOKEN}", Owner: "org"},
-				Server: ServerConfig{EnableAuth: true, APIKeys: []string{}},
+				Server: ServerConfig{EnableAuth: boolPtr(true), APIKeys: []string{}},
 				Apps:   map[string]AppConfig{"app": {Repo: "repo", ComposeTemplate: tplPath}},
 			},
 			expectError: true,
@@ -320,10 +324,30 @@ func TestConfigValidation(t *testing.T) {
 			config: Config{
 				Domain: DomainConfig{BaseDomain: "example.com"},
 				GitHub: GitHubConfig{Token: "${TOKEN}", Owner: "org"},
-				Server: ServerConfig{EnableAuth: true, APIKeys: []string{""}},
+				Server: ServerConfig{EnableAuth: boolPtr(true), APIKeys: []string{""}},
 				Apps:   map[string]AppConfig{"app": {Repo: "repo", ComposeTemplate: tplPath}},
 			},
 			expectError: true,
+		},
+		{
+			name: "auth defaulted on without keys fails",
+			config: Config{
+				Domain: DomainConfig{BaseDomain: "example.com"},
+				GitHub: GitHubConfig{Token: "${TOKEN}", Owner: "org"},
+				Server: ServerConfig{EnableAuth: boolPtr(true)},
+				Apps:   map[string]AppConfig{"app": {Repo: "repo", ComposeTemplate: tplPath}},
+			},
+			expectError: true,
+		},
+		{
+			name: "auth explicitly disabled without keys passes",
+			config: Config{
+				Domain: DomainConfig{BaseDomain: "example.com"},
+				GitHub: GitHubConfig{Token: "${TOKEN}", Owner: "org"},
+				Server: ServerConfig{EnableAuth: boolPtr(false)},
+				Apps:   map[string]AppConfig{"app": {Repo: "repo", ComposeTemplate: tplPath}},
+			},
+			expectError: false,
 		},
 		{
 			name: "script path not found",
@@ -386,6 +410,8 @@ func TestLoadPlaintextToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			configContent := `
+server:
+  enable_auth: false
 domain:
   base_domain: "example.com"
 github:

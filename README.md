@@ -106,7 +106,7 @@ cleanup:
 | `server.host` | string | `0.0.0.0` | Listen address |
 | `server.port` | int | `8080` | Listen port |
 | `server.webhook_secret` | string | *required* | GitHub webhook HMAC secret |
-| `server.enable_auth` | bool | `false` | Require API key for `/api/v1/*` endpoints |
+| `server.enable_auth` | bool | `true` | Require API key for `/api/v1/*` endpoints |
 | `server.api_keys` | list | — | Accepted API keys (when auth enabled) |
 | `domain.base_domain` | string | *required** | Base domain for deployment URLs |
 | `github.token` | string | *required* | GitHub PAT (needs `read:packages`) |

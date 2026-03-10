@@ -10,8 +10,8 @@ server:
   # Secret for validating GitHub webhooks (set in GitHub webhook settings)
   # REQUIRED: Use environment variable for security
   webhook_secret: "${WEBHOOK_SECRET}"
-  # Enable API authentication (recommended for production)
-  enable_auth: true
+  # API authentication is enabled by default. Set to false to disable.
+  # enable_auth: true
   # API keys for authenticating requests to /api/v1/* endpoints
   # REQUIRED when enable_auth is true: Use environment variables
   api_keys:
