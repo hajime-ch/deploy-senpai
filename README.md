@@ -597,4 +597,8 @@ curl http://localhost:8080/health
 
 ## License
 
-MIT License - see LICENSE file for details.
+Apache License 2.0 - see [LICENSE](LICENSE) for details.
+
+## Security
+
+If you discover a security vulnerability, please report it responsibly by emailing security@hajime.ch. See [docs/SECURITY.md](docs/SECURITY.md) for full details.
