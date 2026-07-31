@@ -73,7 +73,9 @@ func (s *Server) setupRoutes() {
 
 	// Middleware
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// middleware.RealIP is deliberately not used: it rewrites r.RemoteAddr from
+	// X-Forwarded-For / X-Real-IP whether or not a trusted proxy set them, which
+	// lets a direct caller forge the peer address (GHSA-3fxj-6jh8-hvhx).
 	r.Use(middleware.Recoverer)
 	r.Use(s.securityHeadersMiddleware)
 	r.Use(s.rateLimiter.Middleware)
