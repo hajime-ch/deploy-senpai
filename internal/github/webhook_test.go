@@ -315,15 +315,41 @@ func TestParseWebhook(t *testing.T) {
 		}
 	})
 
-	t.Run("no secret configured", func(t *testing.T) {
+	t.Run("no secret configured is rejected", func(t *testing.T) {
 		body := []byte(`{"ref": "refs/heads/main", "repository": {"name": "test"}}`)
 		req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
 		req.Header.Set("X-GitHub-Event", "push")
 
-		// Should succeed without signature validation
-		_, err := ParseWebhook(req, "")
-		if err != nil {
-			t.Errorf("ParseWebhook() error = %v, should succeed without secret", err)
+		// An unconfigured secret must fail closed, not skip verification.
+		if _, err := ParseWebhook(req, ""); err == nil {
+			t.Error("ParseWebhook() = nil, want error when no secret is configured")
+		}
+	})
+
+	t.Run("no secret configured rejects even a signed request", func(t *testing.T) {
+		body := []byte(`{"ref": "refs/heads/main", "repository": {"name": "test"}}`)
+		req := createSignedRequest(t, "push", body, "some-other-secret")
+
+		if _, err := ParseWebhook(req, ""); err == nil {
+			t.Error("ParseWebhook() = nil, want error when no secret is configured")
+		}
+	})
+
+	t.Run("ref with newline is rejected", func(t *testing.T) {
+		body := []byte("{\"ref\": \"refs/heads/main\\n    privileged: true\", \"repository\": {\"name\": \"test\"}}")
+		req := createSignedRequest(t, "push", body, secret)
+
+		if _, err := ParseWebhook(req, secret); err == nil {
+			t.Error("ParseWebhook() = nil, want error for ref containing a newline")
+		}
+	})
+
+	t.Run("delete event ref with traversal is rejected", func(t *testing.T) {
+		body := []byte(`{"ref": "../../etc", "ref_type": "branch", "repository": {"name": "test"}}`)
+		req := createSignedRequest(t, "delete", body, secret)
+
+		if _, err := ParseWebhook(req, secret); err == nil {
+			t.Error("ParseWebhook() = nil, want error for ref containing ..")
 		}
 	})
 }

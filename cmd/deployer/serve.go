@@ -65,6 +65,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		"apps", len(cfg.Apps),
 	)
 
+	// The webhook endpoint is the one route outside the auth middleware, and its
+	// only credential is the shared secret. Without it every webhook is refused,
+	// so say so at startup rather than letting deploys silently stop working.
+	if cfg.Server.WebhookSecret == "" {
+		logger.Warn("server.webhook_secret is not set: all GitHub webhooks will be rejected. " +
+			"Set it (e.g. via the WEBHOOK_SECRET environment variable) to enable webhook-driven deployments")
+	}
+
 	// Create deployer
 	d := deployer.New(cfg, logger)
 

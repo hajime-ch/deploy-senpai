@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -493,5 +494,53 @@ func TestGetAppByRepo(t *testing.T) {
 	_, _, found = cfg.GetAppByRepo("unknown")
 	if found {
 		t.Error("GetAppByRepo() should not find unknown repo")
+	}
+}
+
+func TestValidateRefName(t *testing.T) {
+	valid := []string{
+		"main",
+		"feature/login",
+		"release-1.0",
+		"v1.2.3",
+		"refs/heads/feature/login",
+		"a",
+	}
+	for _, ref := range valid {
+		t.Run("valid/"+ref, func(t *testing.T) {
+			if err := ValidateRefName(ref); err != nil {
+				t.Errorf("ValidateRefName(%q) = %v, want nil", ref, err)
+			}
+		})
+	}
+
+	invalid := []struct {
+		name string
+		ref  string
+	}{
+		{"empty", ""},
+		{"newline injection", "main\n    privileged: true"},
+		{"carriage return", "main\rfoo"},
+		{"tab", "main\tfoo"},
+		{"double quote", `main"`},
+		{"space", "main foo"},
+		{"percent encoding left over", "main%0Afoo"},
+		{"dollar sign", "main$(id)"},
+		{"backtick", "main`id`"},
+		{"parent directory", "../etc"},
+		{"parent directory embedded", "feature/../../etc"},
+		{"leading slash", "/main"},
+		{"trailing slash", "main/"},
+		{"colon", "main:latest"},
+		{"sanitizes to empty", "___"},
+		{"sanitizes to empty dashes", "---"},
+		{"too long", strings.Repeat("a", 256)},
+	}
+	for _, tc := range invalid {
+		t.Run("invalid/"+tc.name, func(t *testing.T) {
+			if err := ValidateRefName(tc.ref); err == nil {
+				t.Errorf("ValidateRefName(%q) = nil, want error", tc.ref)
+			}
+		})
 	}
 }

@@ -196,7 +196,13 @@ func (rl *RateLimiter) Stop() {
 	}
 }
 
-// getClientIP extracts the client IP from the request
+// getClientIP extracts the client IP from the request.
+//
+// These headers are only trustworthy when a reverse proxy in front of the
+// service overwrites them. A caller reaching the listener directly can set them
+// to any value and land in a different rate-limit bucket per request, so do not
+// rely on this for anything but rate limiting until trusted proxies are
+// configurable.
 func getClientIP(r *http.Request) string {
 	// Check X-Forwarded-For header (set by reverse proxies)
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
