@@ -457,14 +457,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          tags: ghcr.io/${{ github.repository }}:${{ steps.sha.outputs.short }}
 ```
 
-The deployer uses the short SHA from the webhook as the image tag by default.
+**The image tag must be the 7-character short SHA.** On a branch push the
+deployer truncates the commit SHA from the webhook to 7 characters and pulls
+exactly that tag, so pushing the full 40-character `${{ github.sha }}` builds an
+image the deployer will never find — the deploy fails at `docker pull` with an
+error that does not point at the cause.
 
 ## Production / Tagged Deployments
 
