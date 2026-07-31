@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/hajime-ch/deploy-senpai/internal/config"
 )
 
 // WebhookEvent types
@@ -104,14 +106,16 @@ func ParseWebhook(r *http.Request, secret string) (*WebhookPayload, error) {
 		return nil, fmt.Errorf("missing X-GitHub-Event header")
 	}
 
-	// Validate signature if secret is configured
-	if secret != "" {
-		if signature == "" {
-			return nil, fmt.Errorf("missing X-Hub-Signature-256 header")
-		}
-		if !validateSignature(body, signature, secret) {
-			return nil, fmt.Errorf("invalid webhook signature")
-		}
+	// Fail closed: an unconfigured secret means no request can be authenticated,
+	// not that every request is trusted.
+	if secret == "" {
+		return nil, fmt.Errorf("webhook secret is not configured, refusing to process webhook")
+	}
+	if signature == "" {
+		return nil, fmt.Errorf("missing X-Hub-Signature-256 header")
+	}
+	if !validateSignature(body, signature, secret) {
+		return nil, fmt.Errorf("invalid webhook signature")
 	}
 
 	payload := &WebhookPayload{
@@ -156,6 +160,14 @@ func ParseWebhook(r *http.Request, secret string) (*WebhookPayload, error) {
 
 	case EventPing:
 		// Ping events don't need additional parsing
+	}
+
+	// The ref reaches deployment paths and the rendered compose file, so it is
+	// validated here rather than trusted because it arrived over a signed request.
+	if payload.Branch != "" {
+		if err := config.ValidateRefName(payload.Branch); err != nil {
+			return nil, fmt.Errorf("invalid ref %q: %w", payload.Branch, err)
+		}
 	}
 
 	return payload, nil
