@@ -217,6 +217,12 @@ Branch and tag names are validated before rendering — they must match
 `{{.Branch}}` cannot inject YAML into the generated compose file. Use
 `{{.SanitizedBranch}}` anywhere the value becomes a DNS name or container name.
 
+This is stricter than git, which also permits `#`, `+`, `&`, `{`, `}` and
+unicode in branch names. A branch like `feature/fix-#123` is rejected with
+`invalid branch name` rather than deployed. If that blocks your team, the
+character set and the rules for widening it safely are documented at
+`refNamePattern` in `internal/config/config.go`.
+
 ### The `password` Function
 
 Use `{{password "name"}}` to generate a random 32-character hex password. The same name always returns the same password for a given deployment — passwords are persisted in encrypted metadata and reused across re-deploys.

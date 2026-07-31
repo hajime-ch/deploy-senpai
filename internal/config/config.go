@@ -315,6 +315,27 @@ func GeneratePassword() (string, error) {
 // refNamePattern lists the characters a ref may contain. Everything else —
 // control characters, quotes, shell metacharacters — is rejected so that a ref
 // can never break out of a YAML scalar in a rendered compose file.
+//
+// This is deliberately narrower than what git itself permits. Git allows "#",
+// "+", "&", "{", "}", "!", "$" and unicode in a branch name, and all of those
+// are rejected here, so a branch like "feature/fix-#123" is refused rather than
+// deployed. That is a real cost: such a ref used to deploy fine, because
+// SanitizeBranchName simply stripped the offending characters.
+//
+// If someone needs those branches to work, widening this set is a supported
+// change, but be specific about what gets added:
+//
+//   - Safe to add: "#", "+", "&", "!", "~", "@", "," and unicode letters. None
+//     of them terminate a YAML scalar or mean anything to docker compose.
+//   - Never add: "\n" and "\r" (a newline ends the scalar and lets the ref
+//     inject sibling compose keys such as `privileged: true`), '"' and "'"
+//     (they close a quoted scalar), and "$" (docker compose interpolates
+//     ${VAR} in compose files, so a ref could read the deployer's environment).
+//
+// Whatever is added here, keep the ".." and leading/trailing "/" checks in
+// ValidateRefName — those guard the filesystem path, not the YAML, and are not
+// expressible in this pattern. Widening the set is also the point to add cases
+// to TestValidateRefName, which pins the current boundary in both directions.
 var refNamePattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 
 // MaxRefNameLength bounds a ref name before it reaches the filesystem.
