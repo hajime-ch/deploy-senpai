@@ -1,0 +1,144 @@
+# Deploy Senpai
+
+Go service that deploys preview environments from git branches using
+docker-compose. It receives GitHub webhooks (or direct API calls), renders an
+operator-supplied compose template, and runs `docker compose up` on the host via
+a mounted Docker socket. Module `github.com/hajime-ch/deploy-senpai`, Go 1.26.
+
+Two properties shape almost every decision in this codebase:
+
+1. **The HTTP API is exposed to the public internet.** Every path parameter,
+   header, and webhook body is attacker-controlled input.
+2. **The process has the Docker socket mounted**, which is root-equivalent on the
+   host. Anything that reaches `docker compose` is a privilege boundary.
+
+Treat both as load-bearing when changing anything under `internal/api`,
+`internal/github`, or `internal/deployer`.
+
+## Where to find what
+
+| You want | Look at |
+|---|---|
+| HTTP routes, handlers, middleware order | `internal/api/api.go` (`setupRoutes`) |
+| API key auth | `internal/auth/auth.go` |
+| Webhook parsing + signature check | `internal/github/webhook.go` |
+| Config schema, defaults, validation, ref validation | `internal/config/config.go` |
+| Deploy/remove orchestration, path building, `docker` calls | `internal/deployer/deployer.go` |
+| Compose template rendering, `password` function | `internal/deployer/template.go` |
+| Deployment metadata + AES-256-GCM password storage | `internal/deployer/state.go` |
+| Lifecycle scripts (pre/post deploy/remove) | `internal/deployer/scripts.go` |
+| Scheduled + on-branch-delete cleanup | `internal/cleanup/cleanup.go` |
+| Rate limiting, client IP resolution | `internal/ratelimit/ratelimit.go` |
+| Prometheus metrics | `internal/metrics/metrics.go` |
+| CLI client and commands | `internal/cli/` |
+| Server entrypoint and startup wiring | `cmd/deployer/serve.go` |
+| Operator-facing docs, config reference, template variables | `README.md` |
+| Threat model, hardening guidance, checklist | `docs/SECURITY.md` |
+| Example compose templates | `templates/*.yml.tpl` |
+| Example configs | `config.example.yaml`, `config.minimal.yaml` |
+
+`internal/httputil/client.go` is **dead code** — `NewSecureClient` is referenced
+only from its own test. The `security.allowed_init_hosts` and
+`security.block_private_ips` config keys are parsed but never read by anything.
+Do not describe them as active controls.
+
+## Build, test, lint
+
+```
+make build          # -> bin/deploy-senpai
+make test           # go test -v -race ./...
+make lint           # golangci-lint if installed, else falls back to go vet
+make fmt
+go test ./... -count=1
+```
+
+CI (`.github/workflows/ci.yml`) runs Lint, Test, and Build on every PR to `main`.
+Lint is `golangci-lint` with staticcheck enabled and **is a required check** — it
+has failed builds before on deprecated APIs, not just style. It may not be
+installed locally, so a clean `go build` and `go vet` locally does not guarantee
+a green Lint job.
+
+## Request flow
+
+```
+POST /webhook/github          POST /api/v1/deployments/{app}/{branch}
+        |                                  |
+   ParseWebhook                       auth.Middleware
+   (HMAC + ref validation)                 |
+        |                             handler validates app + ref
+        +--------------+-------------------+
+                       |
+              Deployer.Deploy / Remove
+                       |
+        render template -> docker pull -> docker compose up
+```
+
+Routes are registered in `setupRoutes`. `/health`, `/metrics`, and
+`/webhook/github` sit **outside** the `/api/v1` group and therefore outside
+`auth.Middleware`. The webhook's only credential is its HMAC secret.
+
+## Security invariants — do not regress these
+
+Each of these was a real vulnerability that got fixed. Re-introducing any of them
+reopens a known hole.
+
+- **Webhook verification fails closed.** `ParseWebhook` rejects every request when
+  the configured secret is empty. Do not restore an `if secret != ""` guard around
+  the signature check — that made the endpoint accept forged deploy and delete
+  events from anyone on the internet.
+- **Untrusted refs go through `config.ValidateRefName` before reaching the
+  deployer.** Applies to branch and tag names from path params and webhook bodies.
+  Without it a ref containing a newline injects arbitrary keys (`privileged: true`,
+  host bind mounts) into the rendered compose file, which means host root.
+- **The ref charset is deliberately narrower than git's.** The reasoning, what is
+  safe to add, and what must never be added is documented at `refNamePattern` in
+  `internal/config/config.go`. Read that comment before widening it. `$` in
+  particular must stay excluded — docker compose interpolates `${VAR}`.
+- **`Deployer.Remove` requires the app to exist in `cfg.Apps`,** and every path
+  destined for `os.RemoveAll` is built by `deploymentDir`, which verifies the
+  result resolves inside the deployments root. Do not build such a path with a
+  bare `filepath.Join`.
+- **`middleware.RealIP` is intentionally absent** from the chi middleware chain.
+  It rewrites `r.RemoteAddr` from request headers regardless of whether a trusted
+  proxy set them (GHSA-3fxj-6jh8-hvhx). There is a comment where it used to be.
+- **Secret comparisons stay constant-time**: `subtle.ConstantTimeCompare` for API
+  keys, `hmac.Equal` for webhook signatures.
+
+## Non-obvious behaviour
+
+- **chi does not clean dot segments** and `middleware.CleanPath` is not installed,
+  so a literal `..` in a request path reaches the handler as a path parameter.
+  This is why the containment checks above exist. Verified still true on chi
+  v5.3.0. Percent-encoded `%2e%2e` behaves differently — chi routes on `RawPath`
+  and returns the value undecoded.
+- **`SanitizeBranchName` can return the empty string** (e.g. for `___`, `---`,
+  `...`). `filepath.Join` drops empty components, so an unchecked result collapses
+  a deployment path onto its parent directory. Never build a path from it without
+  checking, or call `ValidateRefName` first.
+- **`os.ExpandEnv` runs over the config file before validation**, so an unset
+  `${VAR}` silently becomes `""` rather than erroring. This is why missing secrets
+  must be caught explicitly.
+- **`config.validate()` requires `compose_template` to exist on disk**, so tests
+  constructing a `Config` need real temp files or must avoid `Load`.
+- **The rate limiter buckets on `X-Forwarded-For`**, which is only sound behind a
+  proxy that overwrites it. Documented at `getClientIP`. Fixing it properly needs
+  a trusted-proxy setting; do not silently narrow it, that breaks every
+  reverse-proxy deployment.
+- **`/metrics` renders the raw request path as a label** without escaping. Known,
+  low severity, unfixed.
+
+## Conventions
+
+- Tests are written first — see the existing table-driven tests in
+  `internal/config/config_test.go` and the boundary tests in
+  `internal/deployer/deployer_test.go` and `internal/api/api_test.go`.
+- Assert on a sentinel (`config.ErrInvalidRefName`) rather than an error string
+  when the point is *which* check rejected the input. Several of these code paths
+  fail for unrelated reasons in tests (missing template, no Docker), so a bare
+  "returns an error" assertion can pass without proving anything.
+- Comments explain constraints that the code cannot show — why a value is
+  rejected, what breaks if it is widened — not what the next line does.
+- Commits are `type: summary` (`security:`, `deps:`, `docs:`, `ci:`, `feat:`),
+  with the body explaining why. Work lands via PR to `main`; CI must be green.
+- Never commit real secrets. Example configs use `${VAR}` placeholders throughout,
+  and `checkRawTokens` rejects a plaintext-looking `github.token` at load time.
