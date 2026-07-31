@@ -105,7 +105,7 @@ cleanup:
 |---------|-------|---------|-------------|
 | `server.host` | string | `0.0.0.0` | Listen address |
 | `server.port` | int | `8080` | Listen port |
-| `server.webhook_secret` | string | *required* | GitHub webhook HMAC secret |
+| `server.webhook_secret` | string | *required* | GitHub webhook HMAC secret. If unset, every webhook is rejected — the endpoint fails closed rather than accepting unsigned requests. |
 | `server.enable_auth` | bool | `true` | Require API key for `/api/v1/*` endpoints |
 | `server.api_keys` | list | — | Accepted API keys (when auth enabled) |
 | `domain.base_domain` | string | *required** | Base domain for deployment URLs |
@@ -211,6 +211,11 @@ Templates are standard Go `text/template` files. The deployer renders them into 
 | `{{.Subdomain}}` | `my-app-feature-login` | Computed subdomain |
 | `{{.Network}}` | `web` | Docker network from config |
 | `{{.Env}}` | map | Environment variables from app config |
+
+Branch and tag names are validated before rendering — they must match
+`[A-Za-z0-9._/-]`, be at most 255 characters, and contain no `..` — so
+`{{.Branch}}` cannot inject YAML into the generated compose file. Use
+`{{.SanitizedBranch}}` anywhere the value becomes a DNS name or container name.
 
 ### The `password` Function
 

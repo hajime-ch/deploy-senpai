@@ -85,6 +85,26 @@ func New(cfg *config.Config, logger *slog.Logger) *Deployer {
 	return d
 }
 
+// deploymentDir resolves the on-disk directory for a deployment slot and
+// guarantees the result stays inside the deployments root. An empty sanitized
+// name would otherwise collapse the path onto the parent directory, and an app
+// name containing dot segments would escape it entirely — both of which reach
+// os.RemoveAll.
+func (d *Deployer) deploymentDir(appName, sanitized string) (string, error) {
+	if sanitized == "" {
+		return "", fmt.Errorf("%w: no valid characters after sanitization", config.ErrInvalidRefName)
+	}
+
+	root := filepath.Join(d.dataDir, "deployments")
+	dir := filepath.Join(root, appName, sanitized)
+
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("deployment path for app %q escapes the deployments directory", appName)
+	}
+	return dir, nil
+}
+
 // generateDeploymentID creates a unique deployment ID
 func generateDeploymentID() string {
 	b := make([]byte, 8)
@@ -100,6 +120,9 @@ func (d *Deployer) StartDeployment(appName, branch, imageTag string) (*Deploymen
 	appCfg, ok := d.cfg.Apps[appName]
 	if !ok {
 		return nil, fmt.Errorf("unknown app: %s", appName)
+	}
+	if err := config.ValidateRefName(branch); err != nil {
+		return nil, fmt.Errorf("branch %q: %w", branch, err)
 	}
 
 	// Use deploy_ref as the slot name when configured (e.g. "production"),
@@ -171,6 +194,9 @@ func (d *Deployer) Deploy(ctx context.Context, appName, branch, imageTag string)
 	if !ok {
 		return nil, fmt.Errorf("unknown app: %s", appName)
 	}
+	if err := config.ValidateRefName(branch); err != nil {
+		return nil, fmt.Errorf("branch %q: %w", branch, err)
+	}
 
 	// Use deploy_ref as the slot name when configured (e.g. "production"),
 	// otherwise use the branch/tag name.
@@ -180,7 +206,10 @@ func (d *Deployer) Deploy(ctx context.Context, appName, branch, imageTag string)
 	}
 	sanitized := config.SanitizeBranchName(slotName)
 	key := fmt.Sprintf("%s/%s", appName, sanitized)
-	deployDir := filepath.Join(d.dataDir, "deployments", appName, sanitized)
+	deployDir, err := d.deploymentDir(appName, sanitized)
+	if err != nil {
+		return nil, err
+	}
 	subdomain := fmt.Sprintf("%s-%s", appName, sanitized)
 
 	// Check if we already have a pending deployment
@@ -330,9 +359,19 @@ func (d *Deployer) Deploy(ctx context.Context, appName, branch, imageTag string)
 
 // Remove tears down a deployment
 func (d *Deployer) Remove(ctx context.Context, appName, branch string) error {
+	if _, ok := d.cfg.Apps[appName]; !ok {
+		return fmt.Errorf("unknown app: %s", appName)
+	}
+	if err := config.ValidateRefName(branch); err != nil {
+		return fmt.Errorf("branch %q: %w", branch, err)
+	}
+
 	sanitized := config.SanitizeBranchName(branch)
 	key := fmt.Sprintf("%s/%s", appName, sanitized)
-	deployDir := filepath.Join(d.dataDir, "deployments", appName, sanitized)
+	deployDir, err := d.deploymentDir(appName, sanitized)
+	if err != nil {
+		return err
+	}
 
 	d.logger.Info("removing deployment", "app", appName, "branch", branch)
 

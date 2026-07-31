@@ -3,26 +3,28 @@ package config
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Server        ServerConfig        `yaml:"server"`
-	Domain        DomainConfig        `yaml:"domain"`
-	GitHub        GitHubConfig        `yaml:"github"`
-	Docker        DockerConfig        `yaml:"docker"`
-	Storage       StorageConfig       `yaml:"storage"`
-	Defaults      DefaultsConfig      `yaml:"defaults"`
-	Apps          map[string]AppConfig `yaml:"apps"`
-	Cleanup       CleanupConfig       `yaml:"cleanup"`
-	Logging       LoggingConfig       `yaml:"logging"`
-	Security      SecurityConfig      `yaml:"security"`
-	RateLimit     RateLimitConfig     `yaml:"rate_limit"`
+	Server    ServerConfig         `yaml:"server"`
+	Domain    DomainConfig         `yaml:"domain"`
+	GitHub    GitHubConfig         `yaml:"github"`
+	Docker    DockerConfig         `yaml:"docker"`
+	Storage   StorageConfig        `yaml:"storage"`
+	Defaults  DefaultsConfig       `yaml:"defaults"`
+	Apps      map[string]AppConfig `yaml:"apps"`
+	Cleanup   CleanupConfig        `yaml:"cleanup"`
+	Logging   LoggingConfig        `yaml:"logging"`
+	Security  SecurityConfig       `yaml:"security"`
+	RateLimit RateLimitConfig      `yaml:"rate_limit"`
 }
 
 type StorageConfig struct {
@@ -274,11 +276,11 @@ func checkRawTokens(data []byte) error {
 func isPlaintextToken(token string) bool {
 	// GitHub tokens start with these prefixes
 	plaintextPrefixes := []string{
-		"ghp_",  // Personal access token
-		"gho_",  // OAuth access token
-		"ghu_",  // User-to-server token
-		"ghs_",  // Server-to-server token
-		"ghr_",  // Refresh token
+		"ghp_",        // Personal access token
+		"gho_",        // OAuth access token
+		"ghu_",        // User-to-server token
+		"ghs_",        // Server-to-server token
+		"ghr_",        // Refresh token
 		"github_pat_", // Fine-grained PAT
 	}
 
@@ -308,6 +310,39 @@ func GeneratePassword() (string, error) {
 		return "", fmt.Errorf("generating secure random: %w", err)
 	}
 	return hex.EncodeToString(bytes), nil
+}
+
+// refNamePattern lists the characters a ref may contain. Everything else —
+// control characters, quotes, shell metacharacters — is rejected so that a ref
+// can never break out of a YAML scalar in a rendered compose file.
+var refNamePattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+
+// MaxRefNameLength bounds a ref name before it reaches the filesystem.
+const MaxRefNameLength = 255
+
+// ErrInvalidRefName is returned by ValidateRefName for any rejected ref, so
+// callers can distinguish a rejected input from a downstream failure.
+var ErrInvalidRefName = errors.New("invalid ref name")
+
+// ValidateRefName rejects branch and tag names that are unsafe to use in
+// deployment paths or compose templates. Every untrusted ref must pass through
+// here before it reaches the deployer.
+func ValidateRefName(ref string) error {
+	switch {
+	case ref == "":
+		return fmt.Errorf("%w: empty", ErrInvalidRefName)
+	case len(ref) > MaxRefNameLength:
+		return fmt.Errorf("%w: exceeds %d characters", ErrInvalidRefName, MaxRefNameLength)
+	case !refNamePattern.MatchString(ref):
+		return fmt.Errorf("%w: contains characters outside [A-Za-z0-9._/-]", ErrInvalidRefName)
+	case strings.Contains(ref, ".."):
+		return fmt.Errorf(`%w: contains ".."`, ErrInvalidRefName)
+	case strings.HasPrefix(ref, "/"), strings.HasSuffix(ref, "/"):
+		return fmt.Errorf(`%w: begins or ends with "/"`, ErrInvalidRefName)
+	case SanitizeBranchName(ref) == "":
+		return fmt.Errorf("%w: no valid characters after sanitization", ErrInvalidRefName)
+	}
+	return nil
 }
 
 // SanitizeBranchName converts a branch name to a valid subdomain/container name

@@ -425,6 +425,12 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := config.ValidateRefName(branch); err != nil {
+		s.logger.Warn("rejected deploy for invalid branch", "app", app, "error", err)
+		http.Error(w, "invalid branch name", http.StatusBadRequest)
+		return
+	}
+
 	// Parse optional image tag from body
 	var body struct {
 		ImageTag string `json:"image_tag"`
@@ -455,6 +461,17 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
 	app := chi.URLParam(r, "app")
 	branch := chi.URLParam(r, "branch")
+
+	if _, ok := s.cfg.Apps[app]; !ok {
+		http.Error(w, "unknown app", http.StatusNotFound)
+		return
+	}
+
+	if err := config.ValidateRefName(branch); err != nil {
+		s.logger.Warn("rejected removal for invalid branch", "app", app, "error", err)
+		http.Error(w, "invalid branch name", http.StatusBadRequest)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
