@@ -254,10 +254,15 @@ Two further traps in workflow files:
   reference them as `"$VAR"`. `examples/github-workflow.yml` does this correctly.
 - **A workflow that reimplements branch sanitization in shell will drift** from
   `SanitizeBranchName`, and the URL it prints will stop matching the real one.
-  The equivalent pipeline, verified against the Go implementation, is:
+  Worse, a ref that `ValidateRefName` rejects never deploys at all, so a workflow
+  that does not check first reports success and advertises a URL that will never
+  resolve. `examples/github-workflow.yml` guards against both in its first step:
+  it applies the `ValidateRefName` rules, fails the run with a `::error::`
+  naming the offending rule, and publishes the subdomain as a job output so the
+  sanitizer exists in exactly one place. The equivalent pipeline is
   `tr '[:upper:]' '[:lower:]' | tr '/_.' '-' | sed 's/[^a-z0-9-]//g; s/^-*//; s/-*$//' | cut -c1-63`.
-  Note that refs rejected by `ValidateRefName` never deploy at all, even though
-  CI will happily print a URL for them.
+  If you change `ValidateRefName` or `SanitizeBranchName`, update that step too —
+  they are verified equivalent, not shared.
 
 ## Conventions
 

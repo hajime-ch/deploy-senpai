@@ -26,8 +26,45 @@ jobs:
 
     outputs:
       image_tag: ${{ steps.meta.outputs.tags }}
+      subdomain: ${{ steps.branch.outputs.subdomain }}
 
     steps:
+      # Fail before spending a build on a branch the deployer will refuse.
+      # These rules mirror config.ValidateRefName and config.SanitizeBranchName;
+      # if the deployer rejects the ref, no deployment exists and any URL this
+      # workflow prints would be a lie.
+      - name: Validate branch name and compute subdomain
+        id: branch
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          fail() {
+            echo "::error::deploy-senpai will reject the branch name '$BRANCH': $1"
+            exit 1
+          }
+
+          case "$BRANCH" in
+            "")   fail "it is empty" ;;
+            /*)   fail "it begins with /" ;;
+            */)   fail "it ends with /" ;;
+            *..*) fail "it contains .." ;;
+          esac
+
+          [ "${#BRANCH}" -le 255 ] || fail "it is longer than 255 characters"
+
+          printf '%s' "$BRANCH" | grep -Eq '^[A-Za-z0-9._/-]+$' \
+            || fail "it contains characters outside [A-Za-z0-9._/-]"
+
+          SUBDOMAIN=$(printf '%s' "$BRANCH" \
+            | tr '[:upper:]' '[:lower:]' \
+            | tr '/_.' '-' \
+            | sed 's/[^a-z0-9-]//g; s/^-*//; s/-*$//' \
+            | cut -c1-63)
+
+          [ -n "$SUBDOMAIN" ] || fail "it has no valid characters after sanitization"
+
+          echo "subdomain=$SUBDOMAIN" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@v7
 
@@ -65,24 +102,19 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Output deployment URL
-        # BRANCH is passed through env rather than interpolated into the script.
+        # Values are passed through env rather than interpolated into the script.
         # A ${{ }} expression is substituted as text before bash parses the line,
         # so a branch name containing $( ) or backticks would execute inside the
         # runner. Keep every github.* value out of run: bodies.
         env:
-          BRANCH: ${{ github.ref_name }}
+          SUBDOMAIN: ${{ steps.branch.outputs.subdomain }}
           REPO: ${{ github.event.repository.name }}
         run: |
-          SANITIZED=$(printf '%s' "$BRANCH" \
-            | tr '[:upper:]' '[:lower:]' \
-            | tr '/_.' '-' \
-            | sed 's/[^a-z0-9-]//g; s/^-*//; s/-*$//' \
-            | cut -c1-63)
           echo "## 🚀 Staging Deployment" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Your branch will be deployed to:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**https://${REPO}-${SANITIZED}.staging.example.com**" >> $GITHUB_STEP_SUMMARY
+          echo "**https://${REPO}-${SUBDOMAIN}.staging.example.com**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "_(Deployment takes ~1-2 minutes after image push)_" >> $GITHUB_STEP_SUMMARY
 
@@ -94,15 +126,10 @@ jobs:
     steps:
       - name: Wait for deployment
         env:
-          BRANCH: ${{ github.ref_name }}
+          SUBDOMAIN: ${{ needs.build-and-push.outputs.subdomain }}
           REPO: ${{ github.event.repository.name }}
         run: |
-          SANITIZED=$(printf '%s' "$BRANCH" \
-            | tr '[:upper:]' '[:lower:]' \
-            | tr '/_.' '-' \
-            | sed 's/[^a-z0-9-]//g; s/^-*//; s/-*$//' \
-            | cut -c1-63)
-          URL="https://${REPO}-${SANITIZED}.staging.example.com"
+          URL="https://${REPO}-${SUBDOMAIN}.staging.example.com"
 
           echo "Waiting for deployment at $URL..."
           
