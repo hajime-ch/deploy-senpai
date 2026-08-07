@@ -127,6 +127,143 @@ reopens a known hole.
 - **`/metrics` renders the raw request path as a label** without escaping. Known,
   low severity, unfixed.
 
+## Working with a running instance
+
+Everything above concerns developing deploy-senpai itself. This section covers
+the other case: an instance is already deployed on a server, and you need to find
+its config or onboard a project onto it.
+
+### Where the config lives
+
+The server reads exactly one YAML file, selected by the `-config` flag. Three
+locations, in the order worth checking:
+
+| Install method | Config path |
+|---|---|
+| systemd (`deploy/deploy-senpai.service`) | `/etc/deployer/config.yaml` |
+| Docker Compose (`docker-compose.yml`) | `./config.yaml` on the host, mounted read-only at `/app/config.yaml` |
+| Run by hand | `./config.yaml` relative to the working directory (the flag default) |
+
+To locate it on a server you did not set up:
+
+```bash
+systemctl cat deploy-senpai | grep ExecStart                   # systemd
+docker inspect deploy-senpai --format '{{json .Mounts}}' | jq  # container
+ps -ef | grep deploy-senpai                                    # either
+```
+
+Compose templates and init files referenced from the config must exist on the
+**server** at the paths given — `validate()` stats every `compose_template` at
+startup and refuses to boot if one is missing. Under systemd the convention is
+`/etc/deployer/templates/`; under Docker they must sit inside a mounted volume.
+
+### Adding an app
+
+Each app is a key under `apps:`. Minimum viable entry:
+
+```yaml
+apps:
+  my-service:                                    # becomes part of the subdomain
+    repo: "my-service"                           # GitHub repo name, matched against webhook payloads
+    compose_template: "/etc/deployer/templates/app.yml.tpl"
+```
+
+`image` defaults to `repo`. The reference the deployer pulls is
+`<docker.registry>/<github.owner>/<image>:<tag>`, so the project's CI must push
+there — GHCR by default. Optional per-app keys: `base_domain` (overrides the
+global one), `env`, `init_files`, `deploy_ref` (pins every deploy to one fixed
+slot, e.g. production), and `scripts` for lifecycle hooks.
+
+Deployment URLs are `https://<app>-<sanitized-branch>.<base_domain>`, so that
+domain needs a wildcard DNS record pointing at the host, and the reverse proxy in
+front must route it.
+
+### Required environment
+
+Config values use `${VAR}` and are expanded by `os.ExpandEnv` at load. An unset
+variable becomes the empty string rather than an error, so a typo fails silently.
+
+- `WEBHOOK_SECRET` — **required in practice.** Without it every webhook is
+  rejected (see the security invariants above). Must match the secret configured
+  on the GitHub webhook.
+- `GITHUB_TOKEN` — PAT with `read:packages`. Startup fails if empty.
+- `API_KEY_1` (whatever `server.api_keys` references) — startup fails when auth
+  is enabled, which is the default, and no key is non-empty.
+- `DEPLOYER_ENCRYPTION_KEY` — optional, must be exactly 32 bytes. At any other
+  length it is ignored with a warning and passwords are stored unencrypted.
+
+Neither the shipped systemd unit nor `docker-compose.yml` sets these — the
+operator supplies them via `EnvironmentFile=` or an `env_file:` entry.
+
+### After editing the config
+
+Config is read once at startup; there is no SIGHUP reload. Restart, then verify:
+
+```bash
+sudo systemctl restart deploy-senpai     # systemd
+docker compose restart deployer          # docker
+
+curl -s localhost:8080/health | jq
+curl -s -H "X-API-Key: $KEY" localhost:8080/api/v1/apps | jq
+```
+
+Check the startup log for the missing-webhook-secret warning, which is the most
+common misconfiguration and otherwise only shows up as webhooks silently failing.
+
+### What the project's own repo needs
+
+1. CI that builds and pushes an image to `<registry>/<owner>/<image>:<tag>` —
+   `examples/github-workflow.yml` is a working starting point. The tag must match
+   exactly what the deployer pulls; see the CI contract below.
+2. A webhook at repo Settings → Webhooks pointing at
+   `https://<deployer-host>/webhook/github`, content type `application/json`,
+   secret matching `WEBHOOK_SECRET`, subscribed to "Pushes" and "Branch or tag
+   deletion". Alternatively skip the webhook and have CI call
+   `POST /api/v1/deployments/{app}/{branch}` with an API key.
+3. Nothing else. The compose template lives on the deployer host, not in the
+   project repo.
+
+### CI contract: the image tag must match
+
+The deployer does not build anything. It pulls an image that CI has already
+pushed, and it computes that tag itself — so CI and deployer must agree exactly
+or the deploy dies at `docker pull` with an error that does not name the cause.
+This is the single most common integration failure.
+
+| Trigger | Tag the deployer pulls | What CI must push |
+|---|---|---|
+| Branch push (webhook) | commit SHA truncated to **7 characters** | a tag that is the bare 7-char short SHA |
+| Tag push (webhook) | the **full tag name**, e.g. `v1.2.3` | the same tag name, untruncated |
+| `POST /api/v1/deployments/{app}/{slot}` | whatever `image_tag` in the JSON body says | that exact tag |
+
+The truncation happens in `handleGitHubWebhook` (`internal/api/api.go`) — the
+`imageTag[:7]` branch. Full path pulled is
+`<docker.registry>/<github.owner>/<app.image>:<tag>`, built in `Deployer.Deploy`,
+where `app.image` defaults to `app.repo`.
+
+In GitHub Actions the working incantation is `docker/metadata-action` with
+`type=sha,prefix=`, which emits a bare 7-character SHA. **Do not use
+`${{ github.sha }}`** — that is the full 40-character SHA and produces an image
+the deployer will never find.
+
+Two further traps in workflow files:
+
+- **Never interpolate `${{ github.* }}` into a `run:` body.** The expression is
+  substituted as text before bash parses the line, so a branch name containing
+  `$( )` or backticks executes in the runner. Pass values via `env:` and
+  reference them as `"$VAR"`. `examples/github-workflow.yml` does this correctly.
+- **A workflow that reimplements branch sanitization in shell will drift** from
+  `SanitizeBranchName`, and the URL it prints will stop matching the real one.
+  Worse, a ref that `ValidateRefName` rejects never deploys at all, so a workflow
+  that does not check first reports success and advertises a URL that will never
+  resolve. `examples/github-workflow.yml` guards against both in its first step:
+  it applies the `ValidateRefName` rules, fails the run with a `::error::`
+  naming the offending rule, and publishes the subdomain as a job output so the
+  sanitizer exists in exactly one place. The equivalent pipeline is
+  `tr '[:upper:]' '[:lower:]' | tr '/_.' '-' | sed 's/[^a-z0-9-]//g; s/^-*//; s/-*$//' | cut -c1-63`.
+  If you change `ValidateRefName` or `SanitizeBranchName`, update that step too —
+  they are verified equivalent, not shared.
+
 ## Conventions
 
 - Tests are written first — see the existing table-driven tests in
