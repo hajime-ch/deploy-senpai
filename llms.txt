@@ -83,6 +83,9 @@ would reach the client as a dropped connection.
 `Deployer` hands out snapshots (`Get`, `GetByID`, `List`) and mutates stored
 records under the write lock — polling races an in-flight deploy otherwise.
 
+`.github/actions/deploy` is a composite action wrapping that trigger-then-poll
+flow for callers on GitHub Actions (`uses: hajime-ch/deploy-senpai/.github/actions/deploy@main`).
+
 Routes are registered in `setupRoutes`. `/health`, `/metrics`, and
 `/webhook/github` sit **outside** the `/api/v1` group and therefore outside
 `auth.Middleware`. The webhook's only credential is its HMAC secret.

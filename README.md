@@ -519,9 +519,49 @@ The `{branch}` path parameter (`production`) is used as the deployment slot name
 That call returns `202` as soon as the deploy is queued — it does not wait for
 the containers to come up. To gate the pipeline on the result, poll
 `GET /api/v1/deployments/status/{id}` until `status` is `running` or `failed`, as
-in the example below.
+in the example below. On GitHub Actions, use the bundled action instead and skip
+writing the loop yourself.
 
-### GitHub Actions Example
+### GitHub Action
+
+This repo ships a composite action that triggers a deploy and waits for the
+deployer's verdict:
+
+```yaml
+      - name: Deploy
+        uses: hajime-ch/deploy-senpai/.github/actions/deploy@main
+        with:
+          url: https://deployer.example.com
+          api-key: ${{ secrets.DEPLOYER_API_KEY }}
+          app: my-app-prod
+          slot: production
+          image-tag: ${{ steps.meta.outputs.version }}
+```
+
+The step fails if the deploy fails or does not finish in time, with the
+deployer's own error message in the log.
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `url` | yes | — | Base URL of the deploy-senpai server |
+| `api-key` | yes | — | Sent as `X-API-Key` — pass a secret |
+| `app` | yes | — | App name from the deployer's `config.yaml` |
+| `slot` | yes | — | Deployment slot (the `{branch}` path segment) |
+| `image-tag` | no | `''` | Image tag; empty lets the server use the sanitized slot name |
+| `wait` | no | `true` | Poll for the outcome and fail the step if the deploy failed |
+| `timeout` | no | `900` | Seconds to wait before giving up |
+| `poll-interval` | no | `5` | Seconds between status polls |
+
+Outputs: `deployment-id`, `status`, and `deployment-url`. They are set even when
+the step fails, so a follow-up step with `if: always()` can report on the
+deployment.
+
+Pin to a tag rather than `@main` if you want the action to change only when you
+say so. With `wait: false` the step returns as soon as the deploy is queued —
+useful for fire-and-forget deploys, at the cost of the pipeline no longer
+verifying anything.
+
+### GitHub Actions Example (without the action)
 
 ```yaml
 # .github/workflows/deploy-production.yml
