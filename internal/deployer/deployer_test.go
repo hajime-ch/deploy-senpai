@@ -111,3 +111,35 @@ func TestDeployRejectsUnsafeBranch(t *testing.T) {
 		})
 	}
 }
+
+// Readers (the status endpoint, cleanup) run concurrently with an in-flight
+// Deploy, so the accessors must hand out snapshots rather than the live record.
+func TestAccessorsReturnSnapshotsNotLiveRecords(t *testing.T) {
+	d, _ := newTestDeployer(t)
+
+	started, err := d.StartDeployment("myapp", "main", "0.1.7")
+	if err != nil {
+		t.Fatalf("StartDeployment: %v", err)
+	}
+
+	byKey, ok := d.Get("myapp", "main")
+	if !ok {
+		t.Fatal("Get did not find the deployment")
+	}
+	byID, ok := d.GetByID(started.ID)
+	if !ok {
+		t.Fatal("GetByID did not find the deployment")
+	}
+	listed := d.List()
+	if len(listed) != 1 {
+		t.Fatalf("List returned %d deployments, want 1", len(listed))
+	}
+
+	d.UpdateDeploymentStatus("myapp", "main", StatusRunning, "")
+
+	for name, dep := range map[string]*Deployment{"Get": byKey, "GetByID": byID, "List": listed[0]} {
+		if dep.Status != StatusPending {
+			t.Errorf("%s returned a live record: status changed to %q under the caller", name, dep.Status)
+		}
+	}
+}

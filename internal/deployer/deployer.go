@@ -182,7 +182,8 @@ func (d *Deployer) GetByID(id string) (*Deployment, bool) {
 
 	for _, dep := range d.deployments {
 		if dep.ID == id {
-			return dep, true
+			snapshot := *dep
+			return &snapshot, true
 		}
 	}
 	return nil, false
@@ -237,10 +238,12 @@ func (d *Deployer) Deploy(ctx context.Context, appName, branch, imageTag string)
 		}
 	}
 
-	// Update status to in_progress
+	// Update status to in_progress. Every mutation of a stored record happens
+	// under the write lock: readers (the status endpoint, cleanup) snapshot
+	// these same records while a deploy is in flight.
+	d.mu.Lock()
 	deployment.Status = StatusInProgress
 	deployment.UpdatedAt = time.Now()
-	d.mu.Lock()
 	d.deployments[key] = deployment
 	d.mu.Unlock()
 
@@ -254,14 +257,16 @@ func (d *Deployer) Deploy(ctx context.Context, appName, branch, imageTag string)
 
 	// Helper to mark failure
 	markFailed := func(err error) (*Deployment, error) {
+		d.mu.Lock()
 		deployment.Status = StatusFailed
 		deployment.ErrorMessage = err.Error()
 		deployment.UpdatedAt = time.Now()
-		d.mu.Lock()
 		d.deployments[key] = deployment
+		snapshot := *deployment
 		d.mu.Unlock()
-		d.saveDeployment(deployment, nil)
-		return deployment, err
+
+		d.saveDeployment(&snapshot, nil)
+		return &snapshot, err
 	}
 
 	// Create deployment directory
@@ -330,31 +335,31 @@ func (d *Deployer) Deploy(ctx context.Context, appName, branch, imageTag string)
 	}
 
 	// Mark as running
+	d.mu.Lock()
 	deployment.Status = StatusRunning
 	deployment.UpdatedAt = time.Now()
 	deployment.LastActivity = time.Now()
 	deployment.ErrorMessage = ""
-
-	d.mu.Lock()
 	d.deployments[key] = deployment
+	snapshot := *deployment
 	d.mu.Unlock()
 
 	// Save deployment info with passwords
-	d.saveDeployment(deployment, passwords)
+	d.saveDeployment(&snapshot, passwords)
 
 	d.logger.Info("deployment successful",
-		"id", deployment.ID,
+		"id", snapshot.ID,
 		"app", appName,
 		"branch", branch,
 		"url", deployment.URL,
 	)
 
 	// Run post-deploy script (failure is non-fatal)
-	if err := d.runScript(ctx, appCfg.Scripts.PostDeploy, deployment); err != nil {
+	if err := d.runScript(ctx, appCfg.Scripts.PostDeploy, &snapshot); err != nil {
 		d.logger.Warn("post-deploy script failed", "error", err)
 	}
 
-	return deployment, nil
+	return &snapshot, nil
 }
 
 // Remove tears down a deployment
@@ -414,19 +419,21 @@ func (d *Deployer) Remove(ctx context.Context, appName, branch string) error {
 	return nil
 }
 
-// List returns all active deployments
+// List returns snapshots of all active deployments. Callers get copies: an
+// in-flight Deploy mutates the stored records concurrently.
 func (d *Deployer) List() []*Deployment {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	result := make([]*Deployment, 0, len(d.deployments))
 	for _, dep := range d.deployments {
-		result = append(result, dep)
+		snapshot := *dep
+		result = append(result, &snapshot)
 	}
 	return result
 }
 
-// Get returns a specific deployment
+// Get returns a snapshot of a specific deployment.
 func (d *Deployer) Get(appName, branch string) (*Deployment, bool) {
 	sanitized := config.SanitizeBranchName(branch)
 	key := fmt.Sprintf("%s/%s", appName, sanitized)
@@ -435,7 +442,11 @@ func (d *Deployer) Get(appName, branch string) (*Deployment, bool) {
 	defer d.mu.RUnlock()
 
 	dep, ok := d.deployments[key]
-	return dep, ok
+	if !ok {
+		return nil, false
+	}
+	snapshot := *dep
+	return &snapshot, true
 }
 
 // copyInitFiles copies all files from srcDir into deployDir.

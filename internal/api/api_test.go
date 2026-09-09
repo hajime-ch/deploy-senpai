@@ -1,12 +1,14 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hajime-ch/deploy-senpai/internal/config"
@@ -115,5 +117,104 @@ func TestDeployRejectsInvalidBranchWithBadRequest(t *testing.T) {
 				t.Errorf("POST %s = %d, want %d", target, rec.Code, http.StatusBadRequest)
 			}
 		})
+	}
+}
+
+func TestDeployRespondsWithoutWaitingForTheDeploy(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments/myapp/main", strings.NewReader(`{"image_tag":"0.1.7"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+
+	var got struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("parsing response: %v (body: %s)", err, rec.Body.String())
+	}
+	if got.ID == "" {
+		t.Error("response has no deployment id to poll with")
+	}
+	// The handler must answer before Deploy runs, so the record it reports is
+	// still pending rather than a terminal state.
+	if got.Status != "pending" {
+		t.Errorf("status = %q, want %q", got.Status, "pending")
+	}
+}
+
+func TestDeployReturnsAnIDThatTheStatusEndpointResolves(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments/myapp/main", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	var triggered struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &triggered); err != nil {
+		t.Fatalf("parsing response: %v (body: %s)", err, rec.Body.String())
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/deployments/status/"+triggered.ID, nil)
+	statusRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(statusRec, statusReq)
+
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("status endpoint returned %d, want %d (body: %s)", statusRec.Code, http.StatusOK, statusRec.Body.String())
+	}
+
+	var polled struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &polled); err != nil {
+		t.Fatalf("parsing status response: %v", err)
+	}
+	if polled.ID != triggered.ID {
+		t.Errorf("status endpoint returned id %q, want %q", polled.ID, triggered.ID)
+	}
+}
+
+// Clients poll by ID (the only lookup that works for apps pinned to a
+// deploy_ref slot), so that response must carry the whole record, not a subset.
+func TestStatusEndpointReturnsTheFullDeploymentRecord(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	dep, err := srv.deployer.StartDeployment("myapp", "main", "0.1.7")
+	if err != nil {
+		t.Fatalf("StartDeployment: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments/status/"+dep.ID, nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var got struct {
+		ID       string `json:"id"`
+		ImageTag string `json:"image_tag"`
+		Status   string `json:"status"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("parsing response: %v", err)
+	}
+	if got.ID != dep.ID {
+		t.Errorf("id = %q, want %q", got.ID, dep.ID)
+	}
+	if got.ImageTag != "0.1.7" {
+		t.Errorf("image_tag = %q, want %q", got.ImageTag, "0.1.7")
+	}
+	if got.Status != "pending" {
+		t.Errorf("status = %q, want %q", got.Status, "pending")
 	}
 }

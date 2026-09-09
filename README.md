@@ -414,7 +414,7 @@ All `/api/v1/*` endpoints require authentication when `server.enable_auth` is tr
 | `GET` | `/api/v1/deployments` | Yes | List all deployments |
 | `GET` | `/api/v1/deployments/status/{id}` | Yes | Get deployment by ID |
 | `GET` | `/api/v1/deployments/{app}/{branch}` | Yes | Get specific deployment |
-| `POST` | `/api/v1/deployments/{app}/{branch}` | Yes | Trigger manual deploy |
+| `POST` | `/api/v1/deployments/{app}/{branch}` | Yes | Trigger manual deploy (async: `202` + deployment id) |
 | `DELETE` | `/api/v1/deployments/{app}/{branch}` | Yes | Remove deployment |
 | `POST` | `/api/v1/cleanup` | Yes | Trigger cleanup |
 | `GET` | `/api/v1/apps` | Yes | List configured apps |
@@ -429,6 +429,20 @@ curl -X POST https://deployer:8080/api/v1/deployments/my-app/feature-login \
 ```
 
 If `image_tag` is omitted, the sanitized branch name is used.
+
+The call is asynchronous: it answers `202 Accepted` with the deployment record as
+soon as the deploy is queued, and the deploy (registry login, image pull, compose
+up) continues in the background. Poll `GET /api/v1/deployments/status/{id}` with
+the `id` from the response for the outcome — `status` moves through `pending` →
+`in_progress` → `running` or `failed`, with `error_message` set on failure.
+
+Do not expect the POST to block until the deploy finishes: a deploy routinely
+takes longer than the server's write timeout and any reverse proxy in front of
+it, which would turn a *successful* deploy into a dropped connection (typically
+a `502`) for the caller.
+
+Poll by ID rather than by `{app}/{branch}`: for apps with `deploy_ref` set, the
+record is filed under the `deploy_ref` slot, so the app/branch lookup misses it.
 
 ## GitHub Actions Integration
 
@@ -502,6 +516,11 @@ curl -X POST https://deployer:8080/api/v1/deployments/my-app-prod/production \
 
 The `{branch}` path parameter (`production`) is used as the deployment slot name. The `image_tag` in the body specifies which image to pull.
 
+That call returns `202` as soon as the deploy is queued — it does not wait for
+the containers to come up. To gate the pipeline on the result, poll
+`GET /api/v1/deployments/status/{id}` until `status` is `running` or `failed`, as
+in the example below.
+
 ### GitHub Actions Example
 
 ```yaml
@@ -533,11 +552,43 @@ jobs:
           tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
 
       - name: Deploy
+        env:
+          DEPLOYER_URL: ${{ vars.DEPLOYER_URL }}
+          DEPLOYER_API_KEY: ${{ secrets.DEPLOYER_API_KEY }}
+          IMAGE_TAG: ${{ github.ref_name }}
         run: |
-          curl -sf -X POST "${{ vars.DEPLOYER_URL }}/api/v1/deployments/my-app-prod/production" \
-            -H "X-API-Key: ${{ secrets.DEPLOYER_API_KEY }}" \
+          set -euo pipefail
+          base="${DEPLOYER_URL%/}"
+
+          # Trigger: answers 202 immediately with the deployment record.
+          id=$(curl -fsS -X POST "$base/api/v1/deployments/my-app-prod/production" \
+            -H "X-API-Key: $DEPLOYER_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"image_tag\": \"${{ github.ref_name }}\"}"
+            -d "{\"image_tag\": \"$IMAGE_TAG\"}" | jq -r .id)
+          echo "Triggered deployment $id"
+
+          # Poll until the deploy settles.
+          deadline=$(( SECONDS + 600 ))
+          status=unknown
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            sleep 5
+            dep=$(curl -fsS --max-time 15 "$base/api/v1/deployments/status/$id" \
+              -H "X-API-Key: $DEPLOYER_API_KEY") || { echo "  poll failed, retrying"; continue; }
+            status=$(jq -r .status <<<"$dep")
+            case "$status" in
+              running)
+                echo "Deployed: $(jq -r .url <<<"$dep")"
+                exit 0 ;;
+              failed)
+                echo "::error::Deployment failed: $(jq -r .error_message <<<"$dep")"
+                exit 1 ;;
+              *)
+                echo "  status: $status" ;;
+            esac
+          done
+
+          echo "::error::Timed out waiting for deployment $id (last status: $status)"
+          exit 1
 ```
 
 ### Tag Push Webhooks

@@ -122,7 +122,7 @@ func NewDeployCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if status != http.StatusCreated && status != http.StatusOK {
+			if status != http.StatusAccepted && status != http.StatusCreated && status != http.StatusOK {
 				return fmt.Errorf("server returned %d: %s", status, string(data))
 			}
 
@@ -140,6 +140,10 @@ func NewDeployCmd() *cobra.Command {
 				return nil
 			}
 
+			// Poll by ID: the app/branch lookup misses deployments that the
+			// server filed under an app's deploy_ref slot.
+			statusPath := fmt.Sprintf("/api/v1/deployments/status/%s", dep.ID)
+
 			// Poll until running or failed
 			fmt.Printf("Waiting for deployment %s/%s...\n", app, branch)
 			deadline := time.After(timeout)
@@ -153,7 +157,7 @@ func NewDeployCmd() *cobra.Command {
 				case <-cmd.Context().Done():
 					return cmd.Context().Err()
 				case <-ticker.C:
-					data, status, err = client.Get(cmd.Context(), path)
+					data, status, err = client.Get(cmd.Context(), statusPath)
 					if err != nil {
 						return err
 					}

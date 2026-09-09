@@ -404,16 +404,7 @@ func (s *Server) handleGetDeploymentStatus(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"id":            dep.ID,
-		"app":           dep.App,
-		"branch":        dep.Branch,
-		"status":        dep.Status,
-		"url":           dep.URL,
-		"error_message": dep.ErrorMessage,
-		"created_at":    dep.CreatedAt,
-		"updated_at":    dep.UpdatedAt,
-	})
+	_ = json.NewEncoder(w).Encode(dep)
 }
 
 func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
@@ -444,20 +435,46 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		imageTag = config.SanitizeBranchName(branch)
 	}
 
-	// Trigger deployment
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
-	defer cancel()
-
-	dep, err := s.deployer.Deploy(ctx, app, branch, imageTag)
+	// Register the deployment up front so the caller gets an ID to poll with.
+	dep, err := s.deployer.StartDeployment(app, branch, imageTag)
 	if err != nil {
-		s.logger.Error("deployment failed", "error", err)
+		s.logger.Error("failed to start deployment", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	// Answer before the deploy runs. A deploy (registry login, image pull,
+	// compose up) routinely outlives the server's WriteTimeout and any proxy
+	// in front of it, which turns a successful deploy into a dead connection
+	// for the client. The caller polls GET /api/v1/deployments/status/{id}
+	// for the outcome instead. Encode a copy: the goroutine below mutates the
+	// stored record.
+	accepted := *dep
+
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(dep)
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(accepted)
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
+		s.metrics.IncDeploymentsTotal()
+
+		if _, err := s.deployer.Deploy(ctx, app, branch, imageTag); err != nil {
+			s.metrics.IncDeploymentsFailed()
+			s.logger.Error("deployment failed",
+				"id", accepted.ID,
+				"app", app,
+				"branch", branch,
+				"error", err,
+			)
+		} else {
+			s.metrics.IncDeploymentsSucceeded()
+		}
+
+		s.metrics.SetActiveDeployments(int64(len(s.deployer.List())))
+	}()
 }
 
 func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
