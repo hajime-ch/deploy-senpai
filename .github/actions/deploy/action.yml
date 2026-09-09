@@ -1,0 +1,147 @@
+name: Deploy via deploy-senpai
+description: >-
+  Trigger a deploy-senpai deployment and wait for the deployer's verdict.
+  The API answers 202 as soon as the deploy is queued and runs it in the
+  background, so this polls the status endpoint instead of holding one
+  connection open for the whole deploy.
+
+inputs:
+  url:
+    description: Base URL of the deploy-senpai server, e.g. https://deploy.example.com
+    required: true
+  api-key:
+    description: API key sent as X-API-Key. Pass a secret, never a literal.
+    required: true
+  app:
+    description: App name as configured in the deployer's config.yaml
+    required: true
+  slot:
+    description: >-
+      Deployment slot — the {branch} path segment. For apps pinned with
+      deploy_ref this is that fixed slot name (e.g. production).
+    required: true
+  image-tag:
+    description: >-
+      Image tag to deploy. Defaults to empty, which lets the server fall back to
+      the sanitized slot name.
+    required: false
+    default: ''
+  wait:
+    description: Poll until the deploy finishes and fail the step if it failed.
+    required: false
+    default: 'true'
+  timeout:
+    description: Seconds to wait for the deploy before giving up.
+    required: false
+    default: '900'
+  poll-interval:
+    description: Seconds between status polls.
+    required: false
+    default: '5'
+
+outputs:
+  deployment-id:
+    description: ID of the deployment, for polling or logs.
+    value: ${{ steps.deploy.outputs.deployment-id }}
+  status:
+    description: Last status seen — pending, in_progress, running or failed.
+    value: ${{ steps.deploy.outputs.status }}
+  deployment-url:
+    description: URL the deployer assigned to the deployment.
+    value: ${{ steps.deploy.outputs.deployment-url }}
+
+runs:
+  using: composite
+  steps:
+    - id: deploy
+      shell: bash
+      env:
+        # Inputs go through the environment rather than into the script body:
+        # an image tag can carry a git ref, which is attacker-influencable text.
+        SENPAI_URL: ${{ inputs.url }}
+        SENPAI_KEY: ${{ inputs.api-key }}
+        APP: ${{ inputs.app }}
+        SLOT: ${{ inputs.slot }}
+        IMAGE_TAG: ${{ inputs.image-tag }}
+        WAIT: ${{ inputs.wait }}
+        TIMEOUT: ${{ inputs.timeout }}
+        POLL_INTERVAL: ${{ inputs.poll-interval }}
+      run: |
+        set -euo pipefail
+
+        id=""
+        status=""
+        deployment_url=""
+        # Outputs are written even on the failure paths, so a later step with
+        # `if: always()` can still report which deployment died.
+        finish() {
+          {
+            echo "deployment-id=$id"
+            echo "status=$status"
+            echo "deployment-url=$deployment_url"
+          } >> "$GITHUB_OUTPUT"
+        }
+        trap finish EXIT
+
+        for tool in curl jq; do
+          command -v "$tool" >/dev/null 2>&1 || { echo "::error::$tool is required but not installed"; exit 1; }
+        done
+        for var in SENPAI_URL SENPAI_KEY APP SLOT; do
+          [ -n "${!var}" ] || { echo "::error::input '$var' is empty"; exit 1; }
+        done
+        case "$TIMEOUT$POLL_INTERVAL" in
+          *[!0-9]*) echo "::error::timeout and poll-interval must be whole seconds"; exit 1 ;;
+        esac
+
+        base="${SENPAI_URL%/}"
+
+        body='{}'
+        if [ -n "$IMAGE_TAG" ]; then
+          body=$(jq -nc --arg tag "$IMAGE_TAG" '{image_tag: $tag}')
+        fi
+
+        response=$(curl -fsS --max-time 30 -X POST "$base/api/v1/deployments/$APP/$SLOT" \
+          -H "X-API-Key: $SENPAI_KEY" \
+          -H "Content-Type: application/json" \
+          -d "$body")
+
+        id=$(jq -r '.id // empty' <<<"$response")
+        if [ -z "$id" ]; then
+          echo "::error::deploy-senpai returned no deployment id: $response"
+          exit 1
+        fi
+        status=$(jq -r '.status // "pending"' <<<"$response")
+        deployment_url=$(jq -r '.url // empty' <<<"$response")
+        echo "Triggered deployment $id ($APP/$SLOT${IMAGE_TAG:+, image tag $IMAGE_TAG})"
+
+        if [ "$WAIT" != "true" ]; then
+          echo "wait is '$WAIT' — not waiting for the deploy to finish"
+          exit 0
+        fi
+
+        # Poll until the deployer reaches a verdict. A transient poll failure is
+        # retried rather than failed: a network blip must not redden a good deploy.
+        deadline=$(( SECONDS + TIMEOUT ))
+        while [ "$SECONDS" -lt "$deadline" ]; do
+          sleep "$POLL_INTERVAL"
+
+          dep=$(curl -fsS --max-time 15 "$base/api/v1/deployments/status/$id" \
+            -H "X-API-Key: $SENPAI_KEY") || { echo "  poll failed, retrying"; continue; }
+
+          status=$(jq -r '.status // "unknown"' <<<"$dep")
+          deployment_url=$(jq -r '.url // empty' <<<"$dep")
+
+          case "$status" in
+            running)
+              echo "Deployed: $deployment_url"
+              exit 0 ;;
+            failed)
+              echo "::error::Deployment $id failed: $(jq -r '.error_message // "no error message"' <<<"$dep")"
+              exit 1 ;;
+            *)
+              echo "  status: $status" ;;
+          esac
+        done
+
+        echo "::error::Timed out after ${TIMEOUT}s waiting for deployment $id (last status: $status). The deploy may still be running — check the server."
+        exit 1

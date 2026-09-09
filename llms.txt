@@ -73,6 +73,19 @@ POST /webhook/github          POST /api/v1/deployments/{app}/{branch}
         render template -> docker pull -> docker compose up
 ```
 
+Deploys are asynchronous on both paths: the handler registers the deployment
+(`StartDeployment`), answers `202` with the record, and runs `Deployer.Deploy` in
+a goroutine on a `context.Background()` timeout. Callers poll
+`GET /api/v1/deployments/status/{id}`. Blocking the response on `Deploy` would
+outlive the server's `WriteTimeout` and any front proxy, so a successful deploy
+would reach the client as a dropped connection.
+
+`Deployer` hands out snapshots (`Get`, `GetByID`, `List`) and mutates stored
+records under the write lock — polling races an in-flight deploy otherwise.
+
+`.github/actions/deploy` is a composite action wrapping that trigger-then-poll
+flow for callers on GitHub Actions (`uses: hajime-ch/deploy-senpai/.github/actions/deploy@main`).
+
 Routes are registered in `setupRoutes`. `/health`, `/metrics`, and
 `/webhook/github` sit **outside** the `/api/v1` group and therefore outside
 `auth.Middleware`. The webhook's only credential is its HMAC secret.
