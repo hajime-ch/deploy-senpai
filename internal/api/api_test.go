@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hajime-ch/deploy-senpai/internal/config"
 	"github.com/hajime-ch/deploy-senpai/internal/deployer"
@@ -18,6 +19,12 @@ import (
 // newTestServer builds a Server with auth disabled over a throwaway data
 // directory holding one deployment: myapp/main.
 func newTestServer(t *testing.T) (*Server, string) {
+	t.Helper()
+	return newTestServerWithApp(t, config.AppConfig{Repo: "myapp", Image: "myapp"})
+}
+
+// newTestServerWithApp is newTestServer with control over the "myapp" config.
+func newTestServerWithApp(t *testing.T, app config.AppConfig) (*Server, string) {
 	t.Helper()
 
 	dataDir := t.TempDir()
@@ -34,7 +41,7 @@ func newTestServer(t *testing.T) (*Server, string) {
 		Server:  config.ServerConfig{EnableAuth: &authDisabled},
 		Storage: config.StorageConfig{DataDir: dataDir},
 		Apps: map[string]config.AppConfig{
-			"myapp": {Repo: "myapp", Image: "myapp"},
+			"myapp": app,
 		},
 	}
 
@@ -216,5 +223,43 @@ func TestStatusEndpointReturnsTheFullDeploymentRecord(t *testing.T) {
 	}
 	if got.Status != "pending" {
 		t.Errorf("status = %q, want %q", got.Status, "pending")
+	}
+}
+
+// A deploy outlives the request that triggered it, so shutdown has to wait for
+// it: cutting a `docker compose up` short leaves the app half-deployed (and in
+// tests, leaves a goroutine writing into a temp dir that is being removed).
+func TestStopWaitsForInFlightDeploys(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "pre-deploy.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 0.5\n"), 0o755); err != nil {
+		t.Fatalf("writing pre-deploy script: %v", err)
+	}
+
+	srv, _ := newTestServerWithApp(t, config.AppConfig{
+		Repo:    "myapp",
+		Image:   "myapp",
+		Scripts: config.ScriptsConfig{PreDeploy: script},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments/myapp/main", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusAccepted)
+	}
+
+	start := time.Now()
+	srv.Stop()
+	if elapsed := time.Since(start); elapsed < 400*time.Millisecond {
+		t.Errorf("Stop returned after %s, while the deploy was still running", elapsed)
+	}
+
+	// The goroutine ran to completion rather than being abandoned mid-flight.
+	dep, ok := srv.deployer.Get("myapp", "main")
+	if !ok {
+		t.Fatal("deployment vanished")
+	}
+	if dep.Status != "failed" {
+		t.Errorf("status = %q, want %q (the deploy should have finished)", dep.Status, "failed")
 	}
 }

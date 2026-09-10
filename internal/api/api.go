@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -36,7 +37,14 @@ type Server struct {
 	auth        *auth.Authenticator
 	rateLimiter *ratelimit.RateLimiter
 	metrics     *metrics.Metrics
+	deploys     sync.WaitGroup
+	stopOnce    sync.Once
 }
+
+// shutdownDrainTimeout caps how long Stop waits for in-flight deploys before
+// giving up on them, so a wedged deploy cannot hold the process open for the
+// deploy timeout.
+const shutdownDrainTimeout = 2 * time.Minute
 
 // New creates a new API server
 func New(cfg *config.Config, d *deployer.Deployer, c *cleanup.Cleaner, logger *slog.Logger) *Server {
@@ -63,9 +71,34 @@ func (s *Server) Metrics() *metrics.Metrics {
 	return s.metrics
 }
 
-// Stop cleans up server resources
+// Stop cleans up server resources and waits for in-flight deploys to finish.
+// Deploys outlive the request that triggered them, and abandoning one mid
+// `docker compose up` leaves the app half-deployed. Safe to call more than once.
 func (s *Server) Stop() {
-	s.rateLimiter.Stop()
+	s.stopOnce.Do(func() {
+		s.rateLimiter.Stop()
+
+		drained := make(chan struct{})
+		go func() {
+			s.deploys.Wait()
+			close(drained)
+		}()
+
+		select {
+		case <-drained:
+		case <-time.After(shutdownDrainTimeout):
+			s.logger.Warn("giving up on in-flight deployments", "waited", shutdownDrainTimeout)
+		}
+	})
+}
+
+// deployInBackground runs fn as a tracked deploy, so Stop can wait for it.
+func (s *Server) deployInBackground(fn func()) {
+	s.deploys.Add(1)
+	go func() {
+		defer s.deploys.Done()
+		fn()
+	}()
 }
 
 func (s *Server) setupRoutes() {
@@ -323,7 +356,7 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Trigger deployment asynchronously
-		go func() {
+		s.deployInBackground(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer cancel()
 
@@ -344,7 +377,7 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 
 			// Update active deployments count
 			s.metrics.SetActiveDeployments(int64(len(s.deployer.List())))
-		}()
+		})
 
 		w.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -455,7 +488,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(accepted)
 
-	go func() {
+	s.deployInBackground(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 
@@ -474,7 +507,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		}
 
 		s.metrics.SetActiveDeployments(int64(len(s.deployer.List())))
-	}()
+	})
 }
 
 func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
