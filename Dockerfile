@@ -13,8 +13,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /deploy-senpai ./cmd/deployer
+# Build binary. VERSION is stamped into the binary so `deploy-senpai version`
+# reports the release it came from instead of "dev".
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s -X main.version=${VERSION}" -o /deploy-senpai ./cmd/deployer
 
 # Runtime stage
 FROM alpine:3.24
