@@ -51,7 +51,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -trimpath -ldflags="-s -w" -o deploy-senpai ./cmd/deployer
+          go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME#v}" -o deploy-senpai ./cmd/deployer
           tar czf deploy-senpai-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz deploy-senpai
 
       - name: Upload artifact
@@ -93,6 +93,8 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
