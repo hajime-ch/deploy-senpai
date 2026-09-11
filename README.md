@@ -44,8 +44,35 @@ docker compose up -d
 
 ### Updating
 
-For a binary install managed by systemd, `update.sh` installs a release and
-restarts the service:
+The binary can replace itself:
+
+```bash
+deploy-senpai self-update            # install the latest release
+deploy-senpai self-update --check    # report what is available, change nothing
+deploy-senpai self-update --version v0.4.0
+```
+
+It picks the asset for this platform, verifies the SHA-256 GitHub publishes for
+it, and runs the downloaded binary's `version` before installing anything. The
+previous binary is kept alongside as `<path>.old`.
+
+It stops rather than guessing when an update would be wrong: inside a container
+(update the image tag instead), on a dev build (`--force` overrides), when the
+binary is a symlink a package manager owns, and when the target is not writable
+— in which case it tells you to re-run under `sudo` rather than escalating on
+its own.
+
+**It does not restart the server.** Replacing the file is safe under a running
+process — the live server keeps the old build until it is restarted — so the
+restart stays a deliberate act:
+
+```bash
+sudo systemctl restart deploy-senpai
+```
+
+For a systemd install where you want download, install and restart in one step,
+`update.sh` does the same checks and handles the restart, rolling back if the
+service does not come back up:
 
 ```bash
 ./update.sh              # install the latest release
@@ -354,6 +381,7 @@ deploy-senpai --server https://deployer:8080 --api-key your-key list
 | `deploy-senpai cleanup` | Trigger cleanup of stale deployments |
 | `deploy-senpai health` | Check server health |
 | `deploy-senpai version` | Print version |
+| `deploy-senpai self-update` | Replace this binary with a release from GitHub |
 
 ### Examples
 
