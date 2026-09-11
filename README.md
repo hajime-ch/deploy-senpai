@@ -42,6 +42,28 @@ Or with Docker:
 docker compose up -d
 ```
 
+### Updating
+
+For a binary install managed by systemd, `update.sh` installs a release and
+restarts the service:
+
+```bash
+./update.sh              # install the latest release
+./update.sh --check      # report what is available, change nothing
+./update.sh --version v0.4.0
+```
+
+It picks the asset for the host's OS and architecture, verifies the SHA-256 that
+GitHub publishes for it, and runs the downloaded binary's `version` before
+installing anything. The previous binary is kept as `<path>.old`, and if the
+service does not come back up after the restart the update is rolled back.
+
+The checksum proves the download arrived intact. It does not prove the release
+is trustworthy — the digest and the file come from the same place — so it is not
+a substitute for signing.
+
+Docker installs update by pulling a new image tag instead.
+
 ### Setup
 
 1. Create a compose template for your app (see [Templates](#templates) below)
