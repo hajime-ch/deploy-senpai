@@ -31,6 +31,32 @@ A lightweight service that automatically deploys feature branches to isolated st
 
 ### Installation
 
+Download the installer, read it, then run it:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/hajime-ch/deploy-senpai/v0.4.0/install.sh
+less install.sh
+sh install.sh
+```
+
+Two steps rather than a `curl … | bash` one-liner, deliberately. Piping to a
+shell runs whatever has arrived so far, so a connection that drops mid-transfer
+executes a truncated script — and it leaves nothing on disk to inspect
+afterwards. Pin the URL to a tag, as above, so the script cannot change under
+you between reading and running it.
+
+It needs only `curl`, `tar` and `sha256sum`/`shasum`. It installs to
+`/usr/local/bin`, resolves the release for your OS and architecture, verifies
+the published SHA-256, runs the binary once before installing it, and prints the
+path, version and checksum of what it installed. Set `INSTALL_DIR` to put it
+somewhere else — `INSTALL_DIR=~/.local/bin sh install.sh` needs no `sudo` at
+all.
+
+It installs the binary and nothing more: no config, no service user, no unit
+file. See [Setup](#setup) for those.
+
+Or build from source:
+
 ```bash
 git clone https://github.com/hajime-ch/deploy-senpai.git
 cd deploy-senpai
@@ -70,14 +96,14 @@ restart stays a deliberate act:
 sudo systemctl restart deploy-senpai
 ```
 
-For a systemd install where you want download, install and restart in one step,
-`update.sh` does the same checks and handles the restart, rolling back if the
-service does not come back up:
+`install.sh` is also the updater. Run it again on a host with a systemd unit and
+it does the same checks, restarts the service, and rolls back if it does not
+come back up:
 
 ```bash
-./update.sh              # install the latest release
-./update.sh --check      # report what is available, change nothing
-./update.sh --version v0.4.0
+./install.sh              # install the latest release
+./install.sh --check      # report what is available, change nothing
+./install.sh --version v0.4.0
 ```
 
 It picks the asset for the host's OS and architecture, verifies the SHA-256 that
