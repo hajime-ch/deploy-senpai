@@ -31,6 +31,32 @@ A lightweight service that automatically deploys feature branches to isolated st
 
 ### Installation
 
+Download the installer, read it, then run it:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/hajime-ch/deploy-senpai/v0.4.0/install.sh
+less install.sh
+sh install.sh
+```
+
+Two steps rather than a `curl … | bash` one-liner, deliberately. Piping to a
+shell runs whatever has arrived so far, so a connection that drops mid-transfer
+executes a truncated script — and it leaves nothing on disk to inspect
+afterwards. Pin the URL to a tag, as above, so the script cannot change under
+you between reading and running it.
+
+It needs only `curl`, `tar` and `sha256sum`/`shasum`. It installs to
+`/usr/local/bin`, resolves the release for your OS and architecture, verifies
+the published SHA-256, runs the binary once before installing it, and prints the
+path, version and checksum of what it installed. Set `INSTALL_DIR` to put it
+somewhere else — `INSTALL_DIR=~/.local/bin sh install.sh` needs no `sudo` at
+all.
+
+It installs the binary and nothing more: no config, no service user, no unit
+file. See [Setup](#setup) for those.
+
+Or build from source:
+
 ```bash
 git clone https://github.com/hajime-ch/deploy-senpai.git
 cd deploy-senpai
@@ -44,13 +70,40 @@ docker compose up -d
 
 ### Updating
 
-For a binary install managed by systemd, `update.sh` installs a release and
-restarts the service:
+The binary can replace itself:
 
 ```bash
-./update.sh              # install the latest release
-./update.sh --check      # report what is available, change nothing
-./update.sh --version v0.4.0
+deploy-senpai self-update            # install the latest release
+deploy-senpai self-update --check    # report what is available, change nothing
+deploy-senpai self-update --version v0.4.0
+```
+
+It picks the asset for this platform, verifies the SHA-256 GitHub publishes for
+it, and runs the downloaded binary's `version` before installing anything. The
+previous binary is kept alongside as `<path>.old`.
+
+It stops rather than guessing when an update would be wrong: inside a container
+(update the image tag instead), on a dev build (`--force` overrides), when the
+binary is a symlink a package manager owns, and when the target is not writable
+— in which case it tells you to re-run under `sudo` rather than escalating on
+its own.
+
+**It does not restart the server.** Replacing the file is safe under a running
+process — the live server keeps the old build until it is restarted — so the
+restart stays a deliberate act:
+
+```bash
+sudo systemctl restart deploy-senpai
+```
+
+`install.sh` is also the updater. Run it again on a host with a systemd unit and
+it does the same checks, restarts the service, and rolls back if it does not
+come back up:
+
+```bash
+./install.sh              # install the latest release
+./install.sh --check      # report what is available, change nothing
+./install.sh --version v0.4.0
 ```
 
 It picks the asset for the host's OS and architecture, verifies the SHA-256 that
@@ -354,6 +407,7 @@ deploy-senpai --server https://deployer:8080 --api-key your-key list
 | `deploy-senpai cleanup` | Trigger cleanup of stale deployments |
 | `deploy-senpai health` | Check server health |
 | `deploy-senpai version` | Print version |
+| `deploy-senpai self-update` | Replace this binary with a release from GitHub |
 
 ### Examples
 

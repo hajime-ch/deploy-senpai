@@ -114,8 +114,19 @@ jobs:
           pattern: deploy-senpai-*
           merge-multiple: true
 
+      # Published so install.sh can verify a download with nothing but curl and
+      # sha256sum. It shares GitHub's trust root, so it proves the file arrived
+      # intact — not that the release itself is trustworthy.
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum ./*.tar.gz | sed 's| \./| |' > checksums.txt
+          cat checksums.txt
+
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
-          files: artifacts/*.tar.gz
+          files: |
+            artifacts/*.tar.gz
+            artifacts/checksums.txt
