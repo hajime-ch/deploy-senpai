@@ -43,6 +43,7 @@ func main() {
 		cli.NewAppsCmd(),
 		cli.NewCleanupCmd(),
 		cli.NewHealthCmd(),
+		cli.NewSelfUpdateCmd(version),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
